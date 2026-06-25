@@ -45,6 +45,31 @@ export default function Admin() {
     load()
   }, [])
 
+  function exportCSV() {
+    const rows = [
+      ['Nome', 'CPF', 'Email', 'Telefone', 'Médico', 'Dosagem (mg)', 'Contrato', 'Assinado em', 'Cadastro'],
+      ...patients.map((p) => [
+        p.nome,
+        p.cpf,
+        p.email,
+        p.telefone,
+        p.medico_prescritor,
+        p.dosagem_inicial_mg ?? '',
+        p.contract?.status === 'signed' ? 'Assinado' : p.contract?.status === 'pending' ? 'Pendente' : 'Sem contrato',
+        p.contract?.signed_at ? format(new Date(p.contract.signed_at), 'dd/MM/yyyy HH:mm', { locale: ptBR }) : '',
+        format(new Date(p.created_at), 'dd/MM/yyyy', { locale: ptBR }),
+      ]),
+    ]
+    const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `pacientes-pronutro-${format(new Date(), 'dd-MM-yyyy')}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const filtered = patients.filter(
     (p) =>
       p.nome.toLowerCase().includes(search.toLowerCase()) ||
@@ -58,12 +83,20 @@ export default function Admin() {
           <h1 className="text-2xl font-bold text-gray-800">Pacientes</h1>
           <p className="text-sm text-gray-500">{patients.length} cadastrado{patients.length !== 1 ? 's' : ''}</p>
         </div>
-        <Link
-          to="/novo-paciente"
-          className="bg-brand text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-dark transition-colors"
-        >
-          + Novo Paciente
-        </Link>
+        <div className="flex gap-2">
+          <button
+            onClick={exportCSV}
+            className="border border-gray-200 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors"
+          >
+            ↓ Exportar CSV
+          </button>
+          <Link
+            to="/novo-paciente"
+            className="bg-brand text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-dark transition-colors"
+          >
+            + Novo Paciente
+          </Link>
+        </div>
       </div>
 
       <input
