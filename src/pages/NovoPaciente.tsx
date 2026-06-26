@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import ProNutroLogo from '../components/ProNutroLogo'
 
 export default function NovoPaciente() {
   const navigate = useNavigate()
@@ -24,6 +25,12 @@ export default function NovoPaciente() {
   const formatCPF = (v: string) => {
     const n = v.replace(/\D/g, '').slice(0, 11)
     return n.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')
+  }
+
+  const formatPhone = (v: string) => {
+    const n = v.replace(/\D/g, '').slice(0, 11)
+    if (n.length <= 10) return n.replace(/(\d{2})(\d{4})(\d{0,4})/, '($1) $2-$3')
+    return n.replace(/(\d{2})(\d{5})(\d{0,4})/, '($1) $2-$3')
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -64,122 +71,155 @@ export default function NovoPaciente() {
     }
 
     const contractUrl = `${window.location.origin}/contrato/${contract.token}`
-    const emailBody = {
-      patient_name: patient.nome,
-      patient_email: patient.email,
-      contract_url: contractUrl,
-    }
-
-    await supabase.functions.invoke('send-contract-email', { body: emailBody })
+    await supabase.functions.invoke('send-contract-email', {
+      body: { patient_name: patient.nome, patient_email: patient.email, contract_url: contractUrl },
+    })
 
     setSuccess(`Paciente cadastrado! Contrato enviado para ${patient.email}`)
     setLoading(false)
     setTimeout(() => navigate(`/paciente/${patient.id}`), 2000)
   }
 
+  const inputCls = 'w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/40 focus:border-brand/60 bg-white transition-colors'
+  const labelCls = 'block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide'
+
   return (
     <div className="max-w-2xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">Novo Paciente</h1>
-        <p className="text-sm text-gray-500">O contrato será enviado por email automaticamente</p>
+      {/* Header card */}
+      <div className="bg-gradient-to-r from-brand to-brand-dark rounded-2xl p-5 mb-6 text-white flex items-center gap-4 shadow-md">
+        <ProNutroLogo size={52} />
+        <div>
+          <h1 className="text-xl font-bold leading-tight">Novo Paciente</h1>
+          <p className="text-green-200 text-sm mt-0.5">O contrato LGPD será enviado por email automaticamente</p>
+        </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="sm:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Nome completo *</label>
-            <input
-              required
-              value={form.nome}
-              onChange={(e) => set('nome', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand"
-              placeholder="Nome do paciente"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">CPF *</label>
-            <input
-              required
-              value={form.cpf}
-              onChange={(e) => set('cpf', formatCPF(e.target.value))}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand"
-              placeholder="000.000.000-00"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Telefone / WhatsApp</label>
-            <input
-              value={form.telefone}
-              onChange={(e) => set('telefone', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand"
-              placeholder="(61) 99999-9999"
-            />
-          </div>
-
-          <div className="sm:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
-            <input
-              required
-              type="email"
-              value={form.email}
-              onChange={(e) => set('email', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand"
-              placeholder="email@paciente.com"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Médico prescritor</label>
-            <input
-              value={form.medico_prescritor}
-              onChange={(e) => set('medico_prescritor', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Dosagem inicial (mg)</label>
-            <input
-              type="number"
-              step="0.5"
-              value={form.dosagem_inicial_mg}
-              onChange={(e) => set('dosagem_inicial_mg', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand"
-              placeholder="Ex: 2.5"
-            />
-          </div>
-
-          <div className="sm:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Observações</label>
-            <textarea
-              rows={3}
-              value={form.observacoes}
-              onChange={(e) => set('observacoes', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand resize-none"
-              placeholder="Alergias, comorbidades, observações clínicas..."
-            />
+      <form onSubmit={handleSubmit} className="space-y-5">
+        {/* Dados pessoais */}
+        <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
+          <h2 className="text-sm font-bold text-gray-700 mb-4 pb-2 border-b border-gray-100 flex items-center gap-2">
+            <span className="w-5 h-5 bg-brand/10 rounded-full flex items-center justify-center text-brand text-xs font-bold">1</span>
+            Dados Pessoais
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="sm:col-span-2">
+              <label className={labelCls}>Nome completo *</label>
+              <input
+                required
+                value={form.nome}
+                onChange={(e) => set('nome', e.target.value)}
+                className={inputCls}
+                placeholder="Nome completo do paciente"
+              />
+            </div>
+            <div>
+              <label className={labelCls}>CPF *</label>
+              <input
+                required
+                value={form.cpf}
+                onChange={(e) => set('cpf', formatCPF(e.target.value))}
+                className={inputCls}
+                placeholder="000.000.000-00"
+              />
+            </div>
+            <div>
+              <label className={labelCls}>Telefone / WhatsApp</label>
+              <input
+                value={form.telefone}
+                onChange={(e) => set('telefone', formatPhone(e.target.value))}
+                className={inputCls}
+                placeholder="(61) 99999-9999"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className={labelCls}>Email *</label>
+              <input
+                required
+                type="email"
+                value={form.email}
+                onChange={(e) => set('email', e.target.value)}
+                className={inputCls}
+                placeholder="email@paciente.com"
+              />
+            </div>
           </div>
         </div>
 
-        {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
-        {success && <p className="text-sm text-green-700 bg-green-50 px-3 py-2 rounded-lg">{success}</p>}
+        {/* Dados clínicos */}
+        <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
+          <h2 className="text-sm font-bold text-gray-700 mb-4 pb-2 border-b border-gray-100 flex items-center gap-2">
+            <span className="w-5 h-5 bg-brand/10 rounded-full flex items-center justify-center text-brand text-xs font-bold">2</span>
+            Dados Clínicos
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={labelCls}>Médico prescritor</label>
+              <input
+                value={form.medico_prescritor}
+                onChange={(e) => set('medico_prescritor', e.target.value)}
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>Dosagem inicial (mg)</label>
+              <div className="relative">
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  value={form.dosagem_inicial_mg}
+                  onChange={(e) => set('dosagem_inicial_mg', e.target.value)}
+                  className={inputCls + ' pr-10'}
+                  placeholder="Ex: 2.5"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">mg</span>
+              </div>
+            </div>
+            <div className="sm:col-span-2">
+              <label className={labelCls}>Observações clínicas</label>
+              <textarea
+                rows={3}
+                value={form.observacoes}
+                onChange={(e) => set('observacoes', e.target.value)}
+                className={inputCls + ' resize-none'}
+                placeholder="Alergias, comorbidades, observações importantes..."
+              />
+            </div>
+          </div>
+        </div>
 
-        <div className="flex gap-3 pt-2">
+        {error && (
+          <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
+            <span>⚠️</span> {error}
+          </div>
+        )}
+        {success && (
+          <div className="flex items-start gap-2 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm">
+            <span>✓</span> {success}
+          </div>
+        )}
+
+        <div className="flex gap-3">
           <button
             type="button"
             onClick={() => navigate('/')}
-            className="px-4 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
+            className="px-5 py-3 text-sm border border-gray-200 rounded-xl text-gray-600 hover:bg-gray-50 transition-colors font-medium bg-white"
           >
             Cancelar
           </button>
           <button
             type="submit"
             disabled={loading}
-            className="flex-1 bg-brand text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-dark transition-colors disabled:opacity-60"
+            className="flex-1 bg-brand text-white px-5 py-3 rounded-xl text-sm font-bold hover:bg-brand-dark transition-colors disabled:opacity-60 shadow-sm flex items-center justify-center gap-2"
           >
-            {loading ? 'Cadastrando...' : 'Cadastrar e Enviar Contrato por Email'}
+            {loading ? (
+              <>
+                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"/>
+                Cadastrando...
+              </>
+            ) : (
+              '✓ Cadastrar e Enviar Contrato por Email'
+            )}
           </button>
         </div>
       </form>
