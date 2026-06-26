@@ -72,7 +72,12 @@ export default function NovoPaciente() {
 
     const contractUrl = `${window.location.origin}/contrato/${contract.token}`
     await supabase.functions.invoke('send-contract-email', {
-      body: { patient_name: patient.nome, patient_email: patient.email, contract_url: contractUrl },
+      body: {
+        patient_name: patient.nome,
+        patient_email: patient.email,
+        patient_phone: patient.telefone,
+        contract_url: contractUrl,
+      },
     })
 
     setSuccess(`Paciente cadastrado! Contrato enviado para ${patient.email}`)

@@ -106,12 +106,13 @@ export default function Paciente() {
       await supabase.from('pronutro_dose_records').insert(payload)
     }
 
-    // Envia email de confirmação ao paciente quando há assinatura nova
+    // Envia email + WhatsApp ao paciente quando há assinatura nova
     if (sig && !sig.isEmpty() && patient?.email) {
       supabase.functions.invoke('send-dose-email', {
         body: {
           patient_name: patient.nome,
           patient_email: patient.email,
+          patient_phone: patient.telefone,
           semana,
           dose_mg: data.dose_mg ?? null,
           proxima_dose_mg: data.proxima_dose_mg ?? null,
@@ -132,10 +133,11 @@ export default function Paciente() {
       body: {
         patient_name: patient.nome,
         patient_email: patient.email,
+        patient_phone: patient.telefone,
         contract_url: `${window.location.origin}/contrato/${contract.token}`,
       },
     })
-    alert('Email reenviado!')
+    alert('Email + WhatsApp reenviados!')
   }
 
   if (loading) return <div className="py-12 text-center text-gray-400">Carregando...</div>
