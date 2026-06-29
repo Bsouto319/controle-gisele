@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom'
+import { useEffect } from 'react'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 import Admin from './pages/Admin'
@@ -8,9 +9,23 @@ import Paciente from './pages/Paciente'
 import LoginPage from './pages/LoginPage'
 import ResetSenha from './pages/ResetSenha'
 
+// Detecta #type=recovery do Supabase e redireciona para /reset-senha
+function AuthHashHandler() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  useEffect(() => {
+    const hash = window.location.hash
+    if (hash.includes('type=recovery') && location.pathname !== '/reset-senha') {
+      navigate('/reset-senha' + hash, { replace: true })
+    }
+  }, [])
+  return null
+}
+
 export default function App() {
   return (
     <BrowserRouter>
+      <AuthHashHandler />
       <Routes>
         {/* Página pública — paciente assina sem login */}
         <Route path="/contrato/:token" element={<Contrato />} />
