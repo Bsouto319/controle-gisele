@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import type { Patient, Contract } from '../types'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+import ImportCSVModal from '../components/ImportCSVModal'
 
 interface PatientWithContract extends Patient {
   contract?: Contract
@@ -24,6 +25,7 @@ export default function Admin() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState<FilterTab>('ativos')
+  const [showImport, setShowImport] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -87,7 +89,18 @@ export default function Admin() {
   const totalSigned = ativos.filter((p) => p.contract?.status === 'signed').length
   const totalPending = ativos.filter((p) => !p.contract || p.contract.status === 'pending').length
 
+  async function reload() {
+    setLoading(true)
+    const { data: pts } = await supabase.from('pronutro_patients').select('*').order('created_at', { ascending: false })
+    if (!pts) return setLoading(false)
+    const { data: contracts } = await supabase.from('pronutro_contracts').select('*')
+    setPatients(pts.map((p) => ({ ...p, contract: contracts?.find((c) => c.patient_id === p.id) })))
+    setLoading(false)
+  }
+
   return (
+    <>
+    {showImport && <ImportCSVModal onClose={() => setShowImport(false)} onSuccess={() => { setShowImport(false); reload() }} />}
     <div>
       {/* Stats */}
       <div className="grid grid-cols-3 gap-3 mb-6">
@@ -131,6 +144,12 @@ export default function Admin() {
           />
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={() => setShowImport(true)}
+            className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition-colors font-medium bg-white"
+          >
+            ↑ <span className="hidden sm:inline">Importar</span> CSV
+          </button>
           <button
             onClick={exportCSV}
             className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition-colors font-medium bg-white"
@@ -182,7 +201,6 @@ export default function Admin() {
                       <p className={`font-semibold truncate ${p.ativo === false ? 'text-gray-400' : 'text-gray-800'}`}>{p.nome}</p>
                       {p.ativo === false && <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full flex-shrink-0">Inativo</span>}
                     </div>
-                    <p className="text-xs text-gray-400 mt-0.5">{p.cpf}</p>
                   </div>
                   <span className="text-brand text-sm font-semibold flex-shrink-0">Ver →</span>
                 </div>
@@ -203,7 +221,6 @@ export default function Admin() {
               <thead>
                 <tr className="bg-gradient-to-r from-brand to-brand-dark text-white">
                   <th className="text-left px-5 py-3 font-semibold text-sm">Paciente</th>
-                  <th className="text-left px-5 py-3 font-semibold text-sm">CPF</th>
                   <th className="text-left px-5 py-3 font-semibold text-sm">Médico</th>
                   <th className="text-left px-5 py-3 font-semibold text-sm">Contrato</th>
                   <th className="text-left px-5 py-3 font-semibold text-sm">Cadastro</th>
@@ -222,7 +239,6 @@ export default function Admin() {
                         {p.ativo === false && <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">Inativo</span>}
                       </div>
                     </td>
-                    <td className="px-5 py-3.5 text-gray-500 font-mono text-xs">{p.cpf}</td>
                     <td className="px-5 py-3.5 text-gray-600">{p.medico_prescritor}</td>
                     <td className="px-5 py-3.5">{statusBadge(p.contract?.status)}</td>
                     <td className="px-5 py-3.5 text-gray-400 text-xs">
@@ -249,5 +265,6 @@ export default function Admin() {
         </>
       )}
     </div>
+    </>
   )
 }
