@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import SignaturePad, { type SignaturePadHandle } from '../components/SignaturePad'
-import type { Patient, Contract, DoseRecord, Purchase } from '../types'
+import EvolucaoChart from '../components/EvolucaoChart'
+import type { Patient, Contract, DoseRecord, Purchase, EvolucaoRecord } from '../types'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
@@ -26,41 +27,99 @@ export default function Paciente() {
   const [savingPurchase, setSavingPurchase] = useState(false)
   const [togglingStatus, setTogglingStatus] = useState(false)
   const [doseForm, setDoseForm] = useState<Record<number, Partial<DoseRecord>>>({})
+  const [evolucao, setEvolucao] = useState<EvolucaoRecord[]>([])
+  const [evolucaoForm, setEvolucaoForm] = useState<Record<number, { peso_kg: string; gordura_pct: string }>>({})
   const [activeSig, setActiveSig] = useState<number | null>(null)
   const [purchaseForm, setPurchaseForm] = useState({ data_compra: '', quantidade_mg: '', lote: '', observacoes: '' })
+  const [numSemanas, setNumSemanas] = useState(8)
+  const [uploadingPdf, setUploadingPdf] = useState<number | null>(null)
+
+  // Edição de dados do paciente
+  const [editingPatient, setEditingPatient] = useState(false)
+  const [editForm, setEditForm] = useState<Partial<Patient>>({})
+  const [savingEdit, setSavingEdit] = useState(false)
+
   const sigRefs = useRef<Record<number, SignaturePadHandle | null>>({})
 
   async function loadData() {
-    const [{ data: p }, { data: c }, { data: d }, { data: pur }] = await Promise.all([
+    const [{ data: p }, { data: c }, { data: d }, { data: pur }, { data: ev }] = await Promise.all([
       supabase.from('pronutro_patients').select('*').eq('id', id).single(),
       supabase.from('pronutro_contracts').select('*').eq('patient_id', id).single(),
       supabase.from('pronutro_dose_records').select('*').eq('patient_id', id).order('semana'),
       supabase.from('pronutro_purchases').select('*').eq('patient_id', id).order('data_compra'),
+      supabase.from('pronutro_evolucao').select('*').eq('patient_id', id).order('semana'),
     ])
     setPatient(p)
     setContract(c)
     setDoses(d ?? [])
     setPurchases(pur ?? [])
+    setEvolucao(ev ?? [])
+
+    // Número de semanas dinâmico: max entre 8 e maior semana existente + 1
+    const maxExisting = d && d.length > 0 ? Math.max(...(d as DoseRecord[]).map(r => r.semana)) : 0
+    const total = Math.max(8, maxExisting + 1)
+    setNumSemanas(total)
 
     const initial: Record<number, Partial<DoseRecord>> = {}
-    for (let s = 1; s <= 8; s++) {
-      const found = d?.find((r: DoseRecord) => r.semana === s)
+    const evoInitial: Record<number, { peso_kg: string; gordura_pct: string }> = {}
+    for (let s = 1; s <= total; s++) {
+      const found = (d as DoseRecord[])?.find(r => r.semana === s)
       initial[s] = found ?? { semana: s }
+      const foundEv = (ev as EvolucaoRecord[])?.find(r => r.semana === s)
+      evoInitial[s] = {
+        peso_kg: foundEv?.peso_kg?.toString() ?? '',
+        gordura_pct: foundEv?.gordura_pct?.toString() ?? '',
+      }
     }
     setDoseForm(initial)
+    setEvolucaoForm(evoInitial)
     setLoading(false)
   }
 
   useEffect(() => { loadData() }, [id])
 
-  // Cálculos de estoque
   const totalComprado = purchases.reduce((acc, p) => acc + Number(p.quantidade_mg), 0)
   const totalAplicado = doses.reduce((acc, d) => acc + Number(d.dose_mg ?? 0), 0)
   const saldo = totalComprado - totalAplicado
   const proximaSemana = doses.length + 1
 
   const setField = (semana: number, field: string, value: string) =>
-    setDoseForm((f) => ({ ...f, [semana]: { ...f[semana], [field]: value } }))
+    setDoseForm((f) => {
+      const updated = { ...f, [semana]: { ...f[semana], [field]: value } }
+      if (field === 'data_aplicacao' && value) {
+        const next = new Date(value + 'T12:00:00')
+        next.setDate(next.getDate() + 7)
+        updated[semana] = { ...updated[semana], proxima_data_aplicacao: next.toISOString().split('T')[0] }
+      }
+      return updated
+    })
+
+  const setEvoField = (semana: number, field: 'peso_kg' | 'gordura_pct', value: string) =>
+    setEvolucaoForm((f) => ({ ...f, [semana]: { ...f[semana], [field]: value } }))
+
+  async function uploadReceita(semana: number, file: File) {
+    setUploadingPdf(semana)
+    try {
+      const ext = file.name.split('.').pop() ?? 'pdf'
+      const path = `${id}/semana_${semana}.${ext}`
+      const { error } = await supabase.storage.from('receitas').upload(path, file, { upsert: true })
+      if (error) throw error
+      const { data: urlData } = supabase.storage.from('receitas').getPublicUrl(path)
+      const receita_url = urlData.publicUrl
+      // Salva URL no banco imediatamente
+      const existing = doses.find(d => d.semana === semana)
+      if (existing) {
+        await supabase.from('pronutro_dose_records').update({ receita_url }).eq('id', existing.id)
+      }
+      setDoseForm(f => ({ ...f, [semana]: { ...f[semana], receita_url } }))
+      setDoses(prev => prev.map(d => d.semana === semana ? { ...d, receita_url } : d))
+    } catch (err) {
+      alert('Erro ao fazer upload do PDF.')
+      console.error(err)
+    } finally {
+      setUploadingPdf(null)
+    }
+  }
 
   async function savePurchase() {
     if (!purchaseForm.quantidade_mg || !purchaseForm.data_compra) return
@@ -94,11 +153,13 @@ export default function Paciente() {
       semana,
       dose_mg: data.dose_mg ?? null,
       proxima_dose_mg: data.proxima_dose_mg ?? null,
+      proxima_data_aplicacao: data.proxima_data_aplicacao ?? null,
       data_compra: data.data_compra ?? null,
       data_aplicacao: data.data_aplicacao ?? null,
       lote: data.lote ?? null,
       observacoes: data.observacoes ?? null,
       assinatura_paciente: sigData,
+      receita_url: data.receita_url ?? null,
     }
 
     const existing = doses.find((d) => d.semana === semana)
@@ -108,7 +169,19 @@ export default function Paciente() {
       await supabase.from('pronutro_dose_records').insert(payload)
     }
 
-    // Envia email + WhatsApp ao paciente quando há assinatura nova
+    const evo = evolucaoForm[semana]
+    if (evo?.peso_kg) {
+      await supabase.from('pronutro_evolucao').upsert({
+        patient_id: id!,
+        semana,
+        peso_kg: Number(evo.peso_kg) || null,
+        gordura_pct: evo.gordura_pct ? Number(evo.gordura_pct) : null,
+        data_medicao: data.data_aplicacao ?? new Date().toISOString().split('T')[0],
+      }, { onConflict: 'patient_id,semana' })
+      const { data: evUp } = await supabase.from('pronutro_evolucao').select('*').eq('patient_id', id).order('semana')
+      setEvolucao(evUp ?? [])
+    }
+
     if (sig && !sig.isEmpty() && patient?.email) {
       supabase.functions.invoke('send-dose-email', {
         body: {
@@ -127,6 +200,15 @@ export default function Paciente() {
     setDoses(updated ?? [])
     setActiveSig(null)
     setSaving(null)
+  }
+
+  async function savePatientEdit() {
+    if (!patient) return
+    setSavingEdit(true)
+    await supabase.from('pronutro_patients').update(editForm).eq('id', patient.id)
+    setPatient(p => p ? { ...p, ...editForm } : p)
+    setEditingPatient(false)
+    setSavingEdit(false)
   }
 
   async function toggleAtivo() {
@@ -158,16 +240,27 @@ export default function Paciente() {
         patient_name: patient.nome,
         patient_email: patient.email,
         patient_phone: patient.telefone,
-        contract_url: `${window.location.origin}/contrato/${contract.token}`,
+        contract_url: `https://controle-pronutro.vercel.app/contrato/${contract.token}`,
       },
     })
     alert('Email + WhatsApp reenviados!')
   }
 
+  function addRetorno() {
+    const next = numSemanas + 1
+    setNumSemanas(next)
+    setDoseForm(f => ({ ...f, [next]: f[next] ?? { semana: next } }))
+    setEvolucaoForm(f => ({ ...f, [next]: f[next] ?? { peso_kg: '', gordura_pct: '' } }))
+    // Rola até o novo retorno
+    setTimeout(() => {
+      document.getElementById(`semana-${next}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 50)
+  }
+
   if (loading) return <div className="py-12 text-center text-gray-400">Carregando...</div>
   if (!patient) return <div className="py-12 text-center text-gray-400">Paciente não encontrado.</div>
 
-  const contractUrl = contract ? `${window.location.origin}/contrato/${contract.token}` : ''
+  const contractUrl = contract ? `https://controle-pronutro.vercel.app/contrato/${contract.token}` : ''
 
   return (
     <div className="space-y-6">
@@ -176,15 +269,28 @@ export default function Paciente() {
       {/* Dados do paciente */}
       <div className={`bg-white rounded-xl border p-6 ${patient.ativo === false ? 'border-gray-300 bg-gray-50' : 'border-gray-200'}`}>
         <div className="flex items-start justify-between gap-3 mb-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-gray-800">{patient.nome}</h1>
-              {patient.ativo === false && (
-                <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full font-medium">Inativo</span>
-              )}
-            </div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold text-gray-800">{patient.nome}</h1>
+            {patient.ativo === false && (
+              <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full font-medium">Inativo</span>
+            )}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
+            {!editingPatient && (
+              <button
+                onClick={() => {
+                  setEditForm({
+                    nome: patient.nome, cpf: patient.cpf, email: patient.email,
+                    telefone: patient.telefone, medico_prescritor: patient.medico_prescritor,
+                    dosagem_inicial_mg: patient.dosagem_inicial_mg, observacoes: patient.observacoes,
+                  })
+                  setEditingPatient(true)
+                }}
+                className="text-xs px-3 py-1.5 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 font-medium transition-colors"
+              >
+                ✏️ Editar
+              </button>
+            )}
             <button
               onClick={toggleAtivo}
               disabled={togglingStatus}
@@ -204,18 +310,103 @@ export default function Paciente() {
             </button>
           </div>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
-          <div><span className="text-gray-500">CPF:</span><br /><span className="font-medium">{patient.cpf}</span></div>
-          <div><span className="text-gray-500">Email:</span><br /><span className="font-medium">{patient.email}</span></div>
-          <div><span className="text-gray-500">Telefone:</span><br /><span className="font-medium">{patient.telefone || '—'}</span></div>
-          <div><span className="text-gray-500">Médico:</span><br /><span className="font-medium">{patient.medico_prescritor}</span></div>
-          <div><span className="text-gray-500">Dosagem inicial:</span><br /><span className="font-medium">{patient.dosagem_inicial_mg ? `${patient.dosagem_inicial_mg} mg` : '—'}</span></div>
-          <div><span className="text-gray-500">Cadastro:</span><br /><span className="font-medium">{format(new Date(patient.created_at), 'dd/MM/yyyy', { locale: ptBR })}</span></div>
-        </div>
-        {patient.observacoes && (
-          <div className="mt-3 text-sm bg-yellow-50 border border-yellow-100 rounded-lg p-3">
-            <span className="text-yellow-700 font-medium">Obs:</span> {patient.observacoes}
+
+        {editingPatient ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Nome completo</label>
+                <input
+                  value={editForm.nome ?? ''}
+                  onChange={e => setEditForm(f => ({ ...f, nome: e.target.value }))}
+                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">CPF</label>
+                <input
+                  value={editForm.cpf ?? ''}
+                  onChange={e => setEditForm(f => ({ ...f, cpf: e.target.value }))}
+                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Email</label>
+                <input
+                  type="email"
+                  value={editForm.email ?? ''}
+                  onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))}
+                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Telefone</label>
+                <input
+                  value={editForm.telefone ?? ''}
+                  onChange={e => setEditForm(f => ({ ...f, telefone: e.target.value }))}
+                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Médico prescritor</label>
+                <input
+                  value={editForm.medico_prescritor ?? ''}
+                  onChange={e => setEditForm(f => ({ ...f, medico_prescritor: e.target.value }))}
+                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Dosagem inicial (mg)</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  value={editForm.dosagem_inicial_mg ?? ''}
+                  onChange={e => setEditForm(f => ({ ...f, dosagem_inicial_mg: e.target.value ? Number(e.target.value) : null }))}
+                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Observações</label>
+              <textarea
+                rows={2}
+                value={editForm.observacoes ?? ''}
+                onChange={e => setEditForm(f => ({ ...f, observacoes: e.target.value }))}
+                className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand resize-none"
+              />
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={savePatientEdit}
+                disabled={savingEdit}
+                className="bg-brand text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-dark transition-colors disabled:opacity-50"
+              >
+                {savingEdit ? 'Salvando...' : 'Salvar alterações'}
+              </button>
+              <button
+                onClick={() => setEditingPatient(false)}
+                className="px-4 py-2 rounded-lg text-sm border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                Cancelar
+              </button>
+            </div>
           </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+              <div><span className="text-gray-500">CPF:</span><br /><span className="font-medium">{patient.cpf}</span></div>
+              <div><span className="text-gray-500">Email:</span><br /><span className="font-medium">{patient.email}</span></div>
+              <div><span className="text-gray-500">Telefone:</span><br /><span className="font-medium">{patient.telefone || '—'}</span></div>
+              <div><span className="text-gray-500">Médico:</span><br /><span className="font-medium">{patient.medico_prescritor}</span></div>
+              <div><span className="text-gray-500">Dosagem inicial:</span><br /><span className="font-medium">{patient.dosagem_inicial_mg ? `${patient.dosagem_inicial_mg} mg` : '—'}</span></div>
+              <div><span className="text-gray-500">Cadastro:</span><br /><span className="font-medium">{format(new Date(patient.created_at), 'dd/MM/yyyy', { locale: ptBR })}</span></div>
+            </div>
+            {patient.observacoes && (
+              <div className="mt-3 text-sm bg-yellow-50 border border-yellow-100 rounded-lg p-3">
+                <span className="text-yellow-700 font-medium">Obs:</span> {patient.observacoes}
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -223,7 +414,6 @@ export default function Paciente() {
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <h2 className="font-bold text-gray-800 mb-4">Controle de Estoque — Tirzepatida</h2>
 
-        {/* Cards resumo */}
         <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-5">
           <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 sm:p-4 text-center">
             <p className="text-xs text-blue-500 font-medium mb-1">Comprado</p>
@@ -242,7 +432,6 @@ export default function Paciente() {
           </div>
         </div>
 
-        {/* Histórico de compras */}
         {purchases.length > 0 && (
           <div className="mb-4">
             <p className="text-xs font-medium text-gray-500 mb-2">HISTÓRICO DE ENTRADAS</p>
@@ -262,7 +451,6 @@ export default function Paciente() {
           </div>
         )}
 
-        {/* Saídas por dose */}
         {doses.filter(d => d.dose_mg).length > 0 && (
           <div className="mb-4">
             <p className="text-xs font-medium text-gray-500 mb-2">SAÍDAS POR DOSE APLICADA</p>
@@ -279,7 +467,6 @@ export default function Paciente() {
           </div>
         )}
 
-        {/* Registrar nova compra */}
         <div className="border-t border-gray-100 pt-4">
           <p className="text-xs font-medium text-gray-500 mb-3">REGISTRAR NOVA ENTRADA</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -354,30 +541,41 @@ export default function Paciente() {
         )}
       </div>
 
+      {/* Gráfico de evolução */}
+      <EvolucaoChart evolucao={evolucao} doses={doses} />
+
       {/* Doses */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
-          <h2 className="font-bold text-gray-800">Esquema de Doses (8 semanas)</h2>
-          {saldo > 0 && proximaSemana <= 8 && (
+          <div>
+            <h2 className="font-bold text-gray-800">Esquema de Doses</h2>
+            <p className="text-xs text-gray-400 mt-0.5">{numSemanas} semanas cadastradas · {doses.filter(d => d.data_aplicacao).length} aplicadas</p>
+          </div>
+          {saldo > 0 && proximaSemana <= numSemanas && (
             <div className="text-xs bg-green-50 border border-green-200 rounded-lg px-3 py-1.5 text-green-700">
               Saldo p/ {proximaSemana}ª semana: <strong>{saldo} mg</strong>
             </div>
           )}
         </div>
+
         <div className="space-y-4">
-          {Array.from({ length: 8 }, (_, i) => i + 1).map((semana) => {
+          {Array.from({ length: numSemanas }, (_, i) => i + 1).map((semana) => {
             const saved = doses.find((d) => d.semana === semana)
             const form = doseForm[semana] ?? {}
             const isSaved = !!saved?.data_aplicacao
             const doseSemana = Number(saved?.dose_mg ?? 0)
             const saldoAposEsta = totalComprado - doses.filter(d => d.semana <= semana && d.dose_mg).reduce((a, d) => a + Number(d.dose_mg), 0)
+            const receitaUrl = (form.receita_url ?? saved?.receita_url) ?? null
 
             return (
-              <div key={semana}
-                className={`border rounded-xl p-4 transition-colors ${isSaved ? 'border-green-200 bg-green-50/30' : 'border-gray-200'}`}>
+              <div
+                key={semana}
+                id={`semana-${semana}`}
+                className={`border rounded-xl p-4 transition-colors ${isSaved ? 'border-green-200 bg-green-50/30' : 'border-gray-200'}`}
+              >
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="font-semibold text-gray-700">
-                    {semana}ª Semana
+                    {semana}ª Semana / Retorno
                     {isSaved && <span className="ml-2 text-xs text-green-600 font-normal">✓ Aplicada</span>}
                   </h3>
                   {isSaved && doseSemana > 0 && (
@@ -388,7 +586,7 @@ export default function Paciente() {
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm mb-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm mb-2">
                   <div>
                     <label className="text-xs text-gray-500 block mb-1">Dose aplicada (mg)</label>
                     <input type="number" step="0.5"
@@ -422,6 +620,37 @@ export default function Paciente() {
                   </div>
                 </div>
 
+                <div className="grid grid-cols-3 gap-3 text-sm mb-3 pt-2 border-t border-gray-100">
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">
+                      Próx. aplicação
+                      {form.data_aplicacao && !form.proxima_data_aplicacao && (
+                        <span className="text-brand ml-1">(auto)</span>
+                      )}
+                    </label>
+                    <input type="date"
+                      value={form.proxima_data_aplicacao ?? ''}
+                      onChange={(e) => setField(semana, 'proxima_data_aplicacao', e.target.value)}
+                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">Peso (kg)</label>
+                    <input type="number" step="0.1"
+                      value={evolucaoForm[semana]?.peso_kg ?? ''}
+                      onChange={(e) => setEvoField(semana, 'peso_kg', e.target.value)}
+                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
+                      placeholder="75.5" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">% Gordura <span className="text-gray-400">(opcional)</span></label>
+                    <input type="number" step="0.1" min="0" max="100"
+                      value={evolucaoForm[semana]?.gordura_pct ?? ''}
+                      onChange={(e) => setEvoField(semana, 'gordura_pct', e.target.value)}
+                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
+                      placeholder="28.5" />
+                  </div>
+                </div>
+
                 <div className="mb-3">
                   <label className="text-xs text-gray-500 block mb-1">Observações</label>
                   <input type="text"
@@ -431,6 +660,42 @@ export default function Paciente() {
                     placeholder="Reações, intercorrências..." />
                 </div>
 
+                {/* Receita médica PDF */}
+                <div className="mb-3 pt-2 border-t border-gray-100">
+                  <label className="text-xs text-gray-500 block mb-1.5">Receita médica (PDF)</label>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <label className={`cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+                      uploadingPdf === semana
+                        ? 'opacity-50 cursor-not-allowed border-gray-200 text-gray-400'
+                        : 'border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300'
+                    }`}>
+                      📎 {uploadingPdf === semana ? 'Enviando...' : receitaUrl ? 'Substituir PDF' : 'Anexar PDF'}
+                      <input
+                        type="file"
+                        accept=".pdf,application/pdf"
+                        className="sr-only"
+                        disabled={uploadingPdf === semana}
+                        onChange={e => {
+                          const file = e.target.files?.[0]
+                          if (file) uploadReceita(semana, file)
+                          e.target.value = ''
+                        }}
+                      />
+                    </label>
+                    {receitaUrl && (
+                      <a
+                        href={receitaUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-brand hover:underline"
+                      >
+                        📄 Ver receita anexada
+                      </a>
+                    )}
+                  </div>
+                </div>
+
+                {/* Assinatura */}
                 <div className="mb-3">
                   {saved?.assinatura_paciente && activeSig !== semana ? (
                     <div>
@@ -447,14 +712,25 @@ export default function Paciente() {
                   )}
                 </div>
 
-                <button onClick={() => saveDose(semana)} disabled={saving === semana}
-                  className="w-full sm:w-auto bg-brand text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-dark transition-colors disabled:opacity-60">
+                <button
+                  onClick={() => saveDose(semana)}
+                  disabled={saving === semana}
+                  className="w-full sm:w-auto bg-brand text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-dark transition-colors disabled:opacity-60"
+                >
                   {saving === semana ? 'Salvando...' : isSaved ? 'Atualizar' : 'Salvar Dose'}
                 </button>
               </div>
             )
           })}
         </div>
+
+        {/* Botão adicionar retorno */}
+        <button
+          onClick={addRetorno}
+          className="mt-4 w-full py-3 border-2 border-dashed border-gray-200 rounded-xl text-sm text-gray-400 hover:border-brand hover:text-brand font-medium transition-colors"
+        >
+          + Adicionar {numSemanas + 1}º Retorno
+        </button>
       </div>
     </div>
   )

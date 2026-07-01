@@ -40,9 +40,22 @@ export interface DoseRecord {
   dose_mg: number | null
   data_compra: string | null
   data_aplicacao: string | null
+  proxima_data_aplicacao: string | null
   lote: string | null
   observacoes: string | null
   proxima_dose_mg: number | null
   assinatura_paciente: string | null
   assinatura_profissional: string | null
+  receita_url: string | null
+}
+
+export interface EvolucaoRecord {
+  id: string
+  patient_id: string
+  semana: number
+  peso_kg: number | null
+  gordura_pct: number | null
+  massa_muscular_kg: number | null
+  data_medicao: string
+  created_at: string
 }
