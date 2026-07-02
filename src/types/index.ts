@@ -17,6 +17,7 @@ export interface GiseleSessao {
   numero_sessao: number
   servico_realizado: string | null
   data_sessao: string | null
+  data_retorno: string | null
   assinatura_cliente: string | null
   created_at: string
 }
