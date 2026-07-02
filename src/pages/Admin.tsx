@@ -38,9 +38,11 @@ export default function Admin() {
 
   function exportCSV() {
     const rows = [
-      ['Nome', 'Pacote', 'Procedimento', 'Data Inicial', 'Data Final', 'Prazo (dias)', 'Sessões realizadas', 'Cadastro'],
+      ['Nome', 'Email', 'Telefone', 'Pacote', 'Procedimento', 'Data Inicial', 'Data Final', 'Prazo (dias)', 'Sessões realizadas', 'Cadastro'],
       ...patients.map((p) => [
         p.nome,
+        p.email ?? '',
+        p.telefone ?? '',
         p.pacote_contratado,
         p.procedimento_contratado ?? '',
         p.data_inicial ? format(new Date(p.data_inicial + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR }) : '',

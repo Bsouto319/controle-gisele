@@ -10,6 +10,8 @@ export default function NovoPaciente() {
 
   const [form, setForm] = useState({
     nome: '',
+    email: '',
+    telefone: '',
     pacote_contratado: '',
     procedimento_contratado: '',
     data_inicial: '',
@@ -21,6 +23,12 @@ export default function NovoPaciente() {
   const set = (field: string, value: string) =>
     setForm((f) => ({ ...f, [field]: value }))
 
+  const formatPhone = (v: string) => {
+    const n = v.replace(/\D/g, '').slice(0, 11)
+    if (n.length <= 10) return n.replace(/(\d{2})(\d{4})(\d{0,4})/, '($1) $2-$3')
+    return n.replace(/(\d{2})(\d{5})(\d{0,4})/, '($1) $2-$3')
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
@@ -30,6 +38,8 @@ export default function NovoPaciente() {
       .from('gisele_patients')
       .insert({
         nome: form.nome,
+        email: form.email || null,
+        telefone: form.telefone || null,
         pacote_contratado: form.pacote_contratado,
         procedimento_contratado: form.procedimento_contratado || null,
         data_inicial: form.data_inicial || null,
@@ -61,11 +71,11 @@ export default function NovoPaciente() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-5">
-        {/* Dados do pacote */}
+        {/* Dados pessoais */}
         <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
           <h2 className="text-sm font-bold text-gray-700 mb-4 pb-2 border-b border-gray-100 flex items-center gap-2">
             <span className="w-5 h-5 bg-brand/10 rounded-full flex items-center justify-center text-brand text-xs font-bold">1</span>
-            Dados do Pacote
+            Dados Pessoais
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
@@ -78,6 +88,35 @@ export default function NovoPaciente() {
                 placeholder="Nome completo do cliente"
               />
             </div>
+            <div>
+              <label className={labelCls}>Email</label>
+              <input
+                type="email"
+                value={form.email}
+                onChange={(e) => set('email', e.target.value)}
+                className={inputCls}
+                placeholder="email@cliente.com"
+              />
+            </div>
+            <div>
+              <label className={labelCls}>Telefone / WhatsApp</label>
+              <input
+                value={form.telefone}
+                onChange={(e) => set('telefone', formatPhone(e.target.value))}
+                className={inputCls}
+                placeholder="(61) 99999-9999"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Dados do pacote */}
+        <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
+          <h2 className="text-sm font-bold text-gray-700 mb-4 pb-2 border-b border-gray-100 flex items-center gap-2">
+            <span className="w-5 h-5 bg-brand/10 rounded-full flex items-center justify-center text-brand text-xs font-bold">2</span>
+            Dados do Pacote
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
               <label className={labelCls}>Pacote aderido / contratado *</label>
               <input

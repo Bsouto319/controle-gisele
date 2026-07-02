@@ -1,6 +1,8 @@
 export interface GiselePatient {
   id: string
   nome: string
+  email: string | null
+  telefone: string | null
   pacote_contratado: string
   data_inicial: string | null
   data_final: string | null

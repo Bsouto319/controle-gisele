@@ -141,6 +141,8 @@ export default function Paciente() {
                 onClick={() => {
                   setEditForm({
                     nome: patient.nome,
+                    email: patient.email,
+                    telefone: patient.telefone,
                     pacote_contratado: patient.pacote_contratado,
                     procedimento_contratado: patient.procedimento_contratado,
                     data_inicial: patient.data_inicial,
@@ -183,6 +185,23 @@ export default function Paciente() {
                 <input
                   value={editForm.nome ?? ''}
                   onChange={e => setEditForm(f => ({ ...f, nome: e.target.value }))}
+                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Email</label>
+                <input
+                  type="email"
+                  value={editForm.email ?? ''}
+                  onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))}
+                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Telefone</label>
+                <input
+                  value={editForm.telefone ?? ''}
+                  onChange={e => setEditForm(f => ({ ...f, telefone: e.target.value }))}
                   className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
                 />
               </div>
@@ -258,6 +277,8 @@ export default function Paciente() {
         ) : (
           <>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+              <div><span className="text-gray-500">Email:</span><br /><span className="font-medium">{patient.email || '—'}</span></div>
+              <div><span className="text-gray-500">Telefone:</span><br /><span className="font-medium">{patient.telefone || '—'}</span></div>
               <div><span className="text-gray-500">Pacote:</span><br /><span className="font-medium">{patient.pacote_contratado || '—'}</span></div>
               <div><span className="text-gray-500">Procedimento:</span><br /><span className="font-medium">{patient.procedimento_contratado || '—'}</span></div>
               <div><span className="text-gray-500">Prazo:</span><br /><span className="font-medium">{patient.prazo_dias ? `${patient.prazo_dias} dias` : '—'}</span></div>

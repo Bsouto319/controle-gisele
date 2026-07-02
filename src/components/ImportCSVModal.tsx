@@ -8,6 +8,8 @@ interface Props {
 
 const FIELDS: { key: string; label: string; required?: boolean }[] = [
   { key: 'nome', label: 'Nome', required: true },
+  { key: 'email', label: 'Email' },
+  { key: 'telefone', label: 'Telefone' },
   { key: 'pacote_contratado', label: 'Pacote contratado' },
   { key: 'procedimento_contratado', label: 'Procedimento contratado' },
   { key: 'data_inicial', label: 'Data inicial' },
@@ -48,6 +50,8 @@ function parseCSV(text: string): string[][] {
 function autoMap(headers: string[]): Record<string, number> {
   const patterns: [string, string[]][] = [
     ['nome', ['nome', 'name', 'cliente', 'paciente']],
+    ['email', ['email', 'mail']],
+    ['telefone', ['telefone', 'fone', 'celular', 'whatsapp', 'tel']],
     ['pacote_contratado', ['pacote', 'plano', 'contratado']],
     ['procedimento_contratado', ['procedimento', 'servico', 'serviço']],
     ['data_inicial', ['inicial', 'inicio', 'início']],
@@ -129,6 +133,8 @@ export default function ImportCSVModal({ onClose, onSuccess }: Props) {
       const batch = rows.slice(i, i + BATCH).map((row) => {
         const rec: Record<string, unknown> = {
           nome: getCell(row, 'nome') || 'Sem nome',
+          email: getCell(row, 'email') || null,
+          telefone: getCell(row, 'telefone') || null,
           pacote_contratado: getCell(row, 'pacote_contratado') || '',
           procedimento_contratado: getCell(row, 'procedimento_contratado') || null,
           data_inicial: getCell(row, 'data_inicial') || null,
