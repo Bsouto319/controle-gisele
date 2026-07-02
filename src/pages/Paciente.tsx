@@ -2,202 +2,78 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import SignaturePad, { type SignaturePadHandle } from '../components/SignaturePad'
-import EvolucaoChart from '../components/EvolucaoChart'
-import type { Patient, Contract, DoseRecord, Purchase, EvolucaoRecord } from '../types'
+import type { GiselePatient, GiseleSessao } from '../types'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-
-const statusBadge = (status?: string) => {
-  if (!status || status === 'pending')
-    return <span className="px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-700">Aguardando assinatura</span>
-  if (status === 'signed')
-    return <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">✓ Assinado</span>
-  return <span className="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700">Expirado</span>
-}
 
 export default function Paciente() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const [patient, setPatient] = useState<Patient | null>(null)
-  const [contract, setContract] = useState<Contract | null>(null)
-  const [doses, setDoses] = useState<DoseRecord[]>([])
-  const [purchases, setPurchases] = useState<Purchase[]>([])
+  const [patient, setPatient] = useState<GiselePatient | null>(null)
+  const [sessoes, setSessoes] = useState<GiseleSessao[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<number | null>(null)
-  const [savingPurchase, setSavingPurchase] = useState(false)
   const [togglingStatus, setTogglingStatus] = useState(false)
-  const [doseForm, setDoseForm] = useState<Record<number, Partial<DoseRecord>>>({})
-  const [evolucao, setEvolucao] = useState<EvolucaoRecord[]>([])
-  const [evolucaoForm, setEvolucaoForm] = useState<Record<number, { peso_kg: string; gordura_pct: string }>>({})
+  const [sessaoForm, setSessaoForm] = useState<Record<number, Partial<GiseleSessao>>>({})
   const [activeSig, setActiveSig] = useState<number | null>(null)
-  const [purchaseForm, setPurchaseForm] = useState({ data_compra: '', quantidade_mg: '', lote: '', observacoes: '' })
-  const [numSemanas, setNumSemanas] = useState(8)
-  const [uploadingPdf, setUploadingPdf] = useState<number | null>(null)
+  const [numSessoes, setNumSessoes] = useState(10)
 
-  // Edição de dados do paciente
+  // Edição de dados do cliente
   const [editingPatient, setEditingPatient] = useState(false)
-  const [editForm, setEditForm] = useState<Partial<Patient>>({})
+  const [editForm, setEditForm] = useState<Partial<GiselePatient>>({})
   const [savingEdit, setSavingEdit] = useState(false)
 
   const sigRefs = useRef<Record<number, SignaturePadHandle | null>>({})
 
   async function loadData() {
-    const [{ data: p }, { data: c }, { data: d }, { data: pur }, { data: ev }] = await Promise.all([
-      supabase.from('pronutro_patients').select('*').eq('id', id).single(),
-      supabase.from('pronutro_contracts').select('*').eq('patient_id', id).single(),
-      supabase.from('pronutro_dose_records').select('*').eq('patient_id', id).order('semana'),
-      supabase.from('pronutro_purchases').select('*').eq('patient_id', id).order('data_compra'),
-      supabase.from('pronutro_evolucao').select('*').eq('patient_id', id).order('semana'),
+    const [{ data: p }, { data: s }] = await Promise.all([
+      supabase.from('gisele_patients').select('*').eq('id', id).single(),
+      supabase.from('gisele_sessoes').select('*').eq('patient_id', id).order('numero_sessao'),
     ])
     setPatient(p)
-    setContract(c)
-    setDoses(d ?? [])
-    setPurchases(pur ?? [])
-    setEvolucao(ev ?? [])
+    setSessoes(s ?? [])
 
-    // Número de semanas dinâmico: max entre 8 e maior semana existente + 1
-    const maxExisting = d && d.length > 0 ? Math.max(...(d as DoseRecord[]).map(r => r.semana)) : 0
-    const total = Math.max(8, maxExisting + 1)
-    setNumSemanas(total)
+    const maxExisting = s && s.length > 0 ? Math.max(...(s as GiseleSessao[]).map(r => r.numero_sessao)) : 0
+    const total = Math.max(10, maxExisting)
+    setNumSessoes(total)
 
-    const initial: Record<number, Partial<DoseRecord>> = {}
-    const evoInitial: Record<number, { peso_kg: string; gordura_pct: string }> = {}
-    for (let s = 1; s <= total; s++) {
-      const found = (d as DoseRecord[])?.find(r => r.semana === s)
-      initial[s] = found ?? { semana: s }
-      const foundEv = (ev as EvolucaoRecord[])?.find(r => r.semana === s)
-      evoInitial[s] = {
-        peso_kg: foundEv?.peso_kg?.toString() ?? '',
-        gordura_pct: foundEv?.gordura_pct?.toString() ?? '',
-      }
+    const initial: Record<number, Partial<GiseleSessao>> = {}
+    for (let n = 1; n <= total; n++) {
+      const found = (s as GiseleSessao[])?.find(r => r.numero_sessao === n)
+      initial[n] = found ?? { numero_sessao: n }
     }
-    setDoseForm(initial)
-    setEvolucaoForm(evoInitial)
+    setSessaoForm(initial)
     setLoading(false)
   }
 
   useEffect(() => { loadData() }, [id])
 
-  const totalComprado = purchases.reduce((acc, p) => acc + Number(p.quantidade_mg), 0)
-  const totalAplicado = doses.reduce((acc, d) => acc + Number(d.dose_mg ?? 0), 0)
-  const saldo = totalComprado - totalAplicado
-  const proximaSemana = doses.length + 1
+  const setField = (numero: number, field: string, value: string) =>
+    setSessaoForm((f) => ({ ...f, [numero]: { ...f[numero], [field]: value } }))
 
-  const setField = (semana: number, field: string, value: string) =>
-    setDoseForm((f) => {
-      const updated = { ...f, [semana]: { ...f[semana], [field]: value } }
-      if (field === 'data_aplicacao' && value) {
-        const next = new Date(value + 'T12:00:00')
-        next.setDate(next.getDate() + 7)
-        updated[semana] = { ...updated[semana], proxima_data_aplicacao: next.toISOString().split('T')[0] }
-      }
-      return updated
-    })
+  async function saveSessao(numero: number) {
+    setSaving(numero)
+    const data = sessaoForm[numero]
+    const sig = sigRefs.current[numero]
+    const sigData = sig && !sig.isEmpty() ? sig.toDataURL() : (data.assinatura_cliente ?? null)
 
-  const setEvoField = (semana: number, field: 'peso_kg' | 'gordura_pct', value: string) =>
-    setEvolucaoForm((f) => ({ ...f, [semana]: { ...f[semana], [field]: value } }))
-
-  async function uploadReceita(semana: number, file: File) {
-    setUploadingPdf(semana)
-    try {
-      const ext = file.name.split('.').pop() ?? 'pdf'
-      const path = `${id}/semana_${semana}.${ext}`
-      const { error } = await supabase.storage.from('receitas').upload(path, file, { upsert: true })
-      if (error) throw error
-      const { data: urlData } = supabase.storage.from('receitas').getPublicUrl(path)
-      const receita_url = urlData.publicUrl
-      // Salva URL no banco imediatamente
-      const existing = doses.find(d => d.semana === semana)
-      if (existing) {
-        await supabase.from('pronutro_dose_records').update({ receita_url }).eq('id', existing.id)
-      }
-      setDoseForm(f => ({ ...f, [semana]: { ...f[semana], receita_url } }))
-      setDoses(prev => prev.map(d => d.semana === semana ? { ...d, receita_url } : d))
-    } catch (err) {
-      alert('Erro ao fazer upload do PDF.')
-      console.error(err)
-    } finally {
-      setUploadingPdf(null)
-    }
-  }
-
-  async function savePurchase() {
-    if (!purchaseForm.quantidade_mg || !purchaseForm.data_compra) return
-    setSavingPurchase(true)
-    await supabase.from('pronutro_purchases').insert({
-      patient_id: id,
-      data_compra: purchaseForm.data_compra,
-      quantidade_mg: Number(purchaseForm.quantidade_mg),
-      lote: purchaseForm.lote || null,
-      observacoes: purchaseForm.observacoes || null,
-    })
-    setPurchaseForm({ data_compra: '', quantidade_mg: '', lote: '', observacoes: '' })
-    const { data } = await supabase.from('pronutro_purchases').select('*').eq('patient_id', id).order('data_compra')
-    setPurchases(data ?? [])
-    setSavingPurchase(false)
-  }
-
-  async function deletePurchase(purchaseId: string) {
-    await supabase.from('pronutro_purchases').delete().eq('id', purchaseId)
-    setPurchases((prev) => prev.filter((p) => p.id !== purchaseId))
-  }
-
-  async function saveDose(semana: number) {
-    setSaving(semana)
-    const data = doseForm[semana]
-    const sig = sigRefs.current[semana]
-    const sigData = sig && !sig.isEmpty() ? sig.toDataURL() : (data.assinatura_paciente ?? null)
-
-    const payload: Partial<DoseRecord> & { patient_id: string; semana: number } = {
+    const payload = {
       patient_id: id!,
-      semana,
-      dose_mg: data.dose_mg ?? null,
-      proxima_dose_mg: data.proxima_dose_mg ?? null,
-      proxima_data_aplicacao: data.proxima_data_aplicacao ?? null,
-      data_compra: data.data_compra ?? null,
-      data_aplicacao: data.data_aplicacao ?? null,
-      lote: data.lote ?? null,
-      observacoes: data.observacoes ?? null,
-      assinatura_paciente: sigData,
-      receita_url: data.receita_url ?? null,
+      numero_sessao: numero,
+      servico_realizado: data.servico_realizado ?? null,
+      data_sessao: data.data_sessao ?? null,
+      assinatura_cliente: sigData,
     }
 
-    const existing = doses.find((d) => d.semana === semana)
+    const existing = sessoes.find((s) => s.numero_sessao === numero)
     if (existing) {
-      await supabase.from('pronutro_dose_records').update(payload).eq('id', existing.id)
+      await supabase.from('gisele_sessoes').update(payload).eq('id', existing.id)
     } else {
-      await supabase.from('pronutro_dose_records').insert(payload)
+      await supabase.from('gisele_sessoes').insert(payload)
     }
 
-    const evo = evolucaoForm[semana]
-    if (evo?.peso_kg) {
-      await supabase.from('pronutro_evolucao').upsert({
-        patient_id: id!,
-        semana,
-        peso_kg: Number(evo.peso_kg) || null,
-        gordura_pct: evo.gordura_pct ? Number(evo.gordura_pct) : null,
-        data_medicao: data.data_aplicacao ?? new Date().toISOString().split('T')[0],
-      }, { onConflict: 'patient_id,semana' })
-      const { data: evUp } = await supabase.from('pronutro_evolucao').select('*').eq('patient_id', id).order('semana')
-      setEvolucao(evUp ?? [])
-    }
-
-    if (sig && !sig.isEmpty() && patient?.email) {
-      supabase.functions.invoke('send-dose-email', {
-        body: {
-          patient_name: patient.nome,
-          patient_email: patient.email,
-          patient_phone: patient.telefone,
-          semana,
-          dose_mg: data.dose_mg ?? null,
-          proxima_dose_mg: data.proxima_dose_mg ?? null,
-          data_aplicacao: data.data_aplicacao ?? null,
-        },
-      })
-    }
-
-    const { data: updated } = await supabase.from('pronutro_dose_records').select('*').eq('patient_id', id).order('semana')
-    setDoses(updated ?? [])
+    const { data: updated } = await supabase.from('gisele_sessoes').select('*').eq('patient_id', id).order('numero_sessao')
+    setSessoes(updated ?? [])
     setActiveSig(null)
     setSaving(null)
   }
@@ -205,7 +81,7 @@ export default function Paciente() {
   async function savePatientEdit() {
     if (!patient) return
     setSavingEdit(true)
-    await supabase.from('pronutro_patients').update(editForm).eq('id', patient.id)
+    await supabase.from('gisele_patients').update(editForm).eq('id', patient.id)
     setPatient(p => p ? { ...p, ...editForm } : p)
     setEditingPatient(false)
     setSavingEdit(false)
@@ -215,58 +91,41 @@ export default function Paciente() {
     if (!patient) return
     const novoStatus = patient.ativo === false ? true : false
     const acao = novoStatus ? 'reativar' : 'inativar'
-    if (!confirm(`Deseja ${acao} o paciente ${patient.nome}?`)) return
+    if (!confirm(`Deseja ${acao} o cliente ${patient.nome}?`)) return
     setTogglingStatus(true)
-    await supabase.from('pronutro_patients').update({ ativo: novoStatus }).eq('id', patient.id)
+    await supabase.from('gisele_patients').update({ ativo: novoStatus }).eq('id', patient.id)
     setPatient((p) => p ? { ...p, ativo: novoStatus } : p)
     setTogglingStatus(false)
   }
 
   async function deletarPaciente() {
     if (!patient) return
-    if (!confirm(`ATENÇÃO: Isso apagará permanentemente o paciente ${patient.nome} e todos os seus dados. Confirma?`)) return
+    if (!confirm(`ATENÇÃO: Isso apagará permanentemente o cliente ${patient.nome} e todos os seus dados. Confirma?`)) return
     if (!confirm(`Última confirmação — apagar ${patient.nome} definitivamente?`)) return
-    await supabase.from('pronutro_dose_records').delete().eq('patient_id', patient.id)
-    await supabase.from('pronutro_purchases').delete().eq('patient_id', patient.id)
-    await supabase.from('pronutro_contracts').delete().eq('patient_id', patient.id)
-    await supabase.from('pronutro_patients').delete().eq('id', patient.id)
+    await supabase.from('gisele_sessoes').delete().eq('patient_id', patient.id)
+    await supabase.from('gisele_patients').delete().eq('id', patient.id)
     navigate('/')
   }
 
-  async function reenviarContrato() {
-    if (!patient || !contract) return
-    await supabase.functions.invoke('send-contract-email', {
-      body: {
-        patient_name: patient.nome,
-        patient_email: patient.email,
-        patient_phone: patient.telefone,
-        contract_url: `https://controle-pronutro.vercel.app/contrato/${contract.token}`,
-      },
-    })
-    alert('Email + WhatsApp reenviados!')
-  }
-
-  function addRetorno() {
-    const next = numSemanas + 1
-    setNumSemanas(next)
-    setDoseForm(f => ({ ...f, [next]: f[next] ?? { semana: next } }))
-    setEvolucaoForm(f => ({ ...f, [next]: f[next] ?? { peso_kg: '', gordura_pct: '' } }))
-    // Rola até o novo retorno
+  function addSessao() {
+    const next = numSessoes + 1
+    setNumSessoes(next)
+    setSessaoForm(f => ({ ...f, [next]: f[next] ?? { numero_sessao: next } }))
     setTimeout(() => {
-      document.getElementById(`semana-${next}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      document.getElementById(`sessao-${next}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }, 50)
   }
 
   if (loading) return <div className="py-12 text-center text-gray-400">Carregando...</div>
-  if (!patient) return <div className="py-12 text-center text-gray-400">Paciente não encontrado.</div>
+  if (!patient) return <div className="py-12 text-center text-gray-400">Cliente não encontrado.</div>
 
-  const contractUrl = contract ? `https://controle-pronutro.vercel.app/contrato/${contract.token}` : ''
+  const concluidas = sessoes.filter(s => s.data_sessao).length
 
   return (
     <div className="space-y-6">
       <Link to="/" className="text-sm text-brand hover:underline">← Voltar</Link>
 
-      {/* Dados do paciente */}
+      {/* Dados do cliente */}
       <div className={`bg-white rounded-xl border p-6 ${patient.ativo === false ? 'border-gray-300 bg-gray-50' : 'border-gray-200'}`}>
         <div className="flex items-start justify-between gap-3 mb-4">
           <div className="flex items-center gap-2">
@@ -280,9 +139,13 @@ export default function Paciente() {
               <button
                 onClick={() => {
                   setEditForm({
-                    nome: patient.nome, cpf: patient.cpf, email: patient.email,
-                    telefone: patient.telefone, medico_prescritor: patient.medico_prescritor,
-                    dosagem_inicial_mg: patient.dosagem_inicial_mg, observacoes: patient.observacoes,
+                    nome: patient.nome,
+                    pacote_contratado: patient.pacote_contratado,
+                    procedimento_contratado: patient.procedimento_contratado,
+                    data_inicial: patient.data_inicial,
+                    data_final: patient.data_final,
+                    prazo_dias: patient.prazo_dias,
+                    observacoes: patient.observacoes,
                   })
                   setEditingPatient(true)
                 }}
@@ -314,7 +177,7 @@ export default function Paciente() {
         {editingPatient ? (
           <div className="space-y-3">
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              <div>
+              <div className="col-span-2 sm:col-span-3">
                 <label className="text-xs text-gray-500 block mb-1">Nome completo</label>
                 <input
                   value={editForm.nome ?? ''}
@@ -322,46 +185,46 @@ export default function Paciente() {
                   className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
                 />
               </div>
-              <div>
-                <label className="text-xs text-gray-500 block mb-1">CPF</label>
+              <div className="col-span-2 sm:col-span-3">
+                <label className="text-xs text-gray-500 block mb-1">Pacote aderido / contratado</label>
                 <input
-                  value={editForm.cpf ?? ''}
-                  onChange={e => setEditForm(f => ({ ...f, cpf: e.target.value }))}
+                  value={editForm.pacote_contratado ?? ''}
+                  onChange={e => setEditForm(f => ({ ...f, pacote_contratado: e.target.value }))}
+                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
+                />
+              </div>
+              <div className="col-span-2 sm:col-span-3">
+                <label className="text-xs text-gray-500 block mb-1">Procedimento contratado</label>
+                <input
+                  value={editForm.procedimento_contratado ?? ''}
+                  onChange={e => setEditForm(f => ({ ...f, procedimento_contratado: e.target.value }))}
                   className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
                 />
               </div>
               <div>
-                <label className="text-xs text-gray-500 block mb-1">Email</label>
+                <label className="text-xs text-gray-500 block mb-1">Data inicial</label>
                 <input
-                  type="email"
-                  value={editForm.email ?? ''}
-                  onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))}
+                  type="date"
+                  value={editForm.data_inicial ?? ''}
+                  onChange={e => setEditForm(f => ({ ...f, data_inicial: e.target.value }))}
                   className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
                 />
               </div>
               <div>
-                <label className="text-xs text-gray-500 block mb-1">Telefone</label>
+                <label className="text-xs text-gray-500 block mb-1">Data final</label>
                 <input
-                  value={editForm.telefone ?? ''}
-                  onChange={e => setEditForm(f => ({ ...f, telefone: e.target.value }))}
+                  type="date"
+                  value={editForm.data_final ?? ''}
+                  onChange={e => setEditForm(f => ({ ...f, data_final: e.target.value }))}
                   className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
                 />
               </div>
               <div>
-                <label className="text-xs text-gray-500 block mb-1">Médico prescritor</label>
-                <input
-                  value={editForm.medico_prescritor ?? ''}
-                  onChange={e => setEditForm(f => ({ ...f, medico_prescritor: e.target.value }))}
-                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 block mb-1">Dosagem inicial (mg)</label>
+                <label className="text-xs text-gray-500 block mb-1">Prazo (dias)</label>
                 <input
                   type="number"
-                  step="0.5"
-                  value={editForm.dosagem_inicial_mg ?? ''}
-                  onChange={e => setEditForm(f => ({ ...f, dosagem_inicial_mg: e.target.value ? Number(e.target.value) : null }))}
+                  value={editForm.prazo_dias ?? ''}
+                  onChange={e => setEditForm(f => ({ ...f, prazo_dias: e.target.value ? Number(e.target.value) : null }))}
                   className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
                 />
               </div>
@@ -394,11 +257,11 @@ export default function Paciente() {
         ) : (
           <>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
-              <div><span className="text-gray-500">CPF:</span><br /><span className="font-medium">{patient.cpf}</span></div>
-              <div><span className="text-gray-500">Email:</span><br /><span className="font-medium">{patient.email}</span></div>
-              <div><span className="text-gray-500">Telefone:</span><br /><span className="font-medium">{patient.telefone || '—'}</span></div>
-              <div><span className="text-gray-500">Médico:</span><br /><span className="font-medium">{patient.medico_prescritor}</span></div>
-              <div><span className="text-gray-500">Dosagem inicial:</span><br /><span className="font-medium">{patient.dosagem_inicial_mg ? `${patient.dosagem_inicial_mg} mg` : '—'}</span></div>
+              <div><span className="text-gray-500">Pacote:</span><br /><span className="font-medium">{patient.pacote_contratado || '—'}</span></div>
+              <div><span className="text-gray-500">Procedimento:</span><br /><span className="font-medium">{patient.procedimento_contratado || '—'}</span></div>
+              <div><span className="text-gray-500">Prazo:</span><br /><span className="font-medium">{patient.prazo_dias ? `${patient.prazo_dias} dias` : '—'}</span></div>
+              <div><span className="text-gray-500">Data inicial:</span><br /><span className="font-medium">{patient.data_inicial ? format(new Date(patient.data_inicial + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR }) : '—'}</span></div>
+              <div><span className="text-gray-500">Data final:</span><br /><span className="font-medium">{patient.data_final ? format(new Date(patient.data_final + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR }) : '—'}</span></div>
               <div><span className="text-gray-500">Cadastro:</span><br /><span className="font-medium">{format(new Date(patient.created_at), 'dd/MM/yyyy', { locale: ptBR })}</span></div>
             </div>
             {patient.observacoes && (
@@ -410,326 +273,95 @@ export default function Paciente() {
         )}
       </div>
 
-      {/* Estoque de Medicamento */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h2 className="font-bold text-gray-800 mb-4">Controle de Estoque — Tirzepatida</h2>
-
-        <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-5">
-          <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 sm:p-4 text-center">
-            <p className="text-xs text-blue-500 font-medium mb-1">Comprado</p>
-            <p className="text-lg sm:text-2xl font-bold text-blue-700">{totalComprado} mg</p>
-          </div>
-          <div className="bg-orange-50 border border-orange-100 rounded-xl p-3 sm:p-4 text-center">
-            <p className="text-xs text-orange-500 font-medium mb-1">Aplicado</p>
-            <p className="text-lg sm:text-2xl font-bold text-orange-700">{totalAplicado} mg</p>
-          </div>
-          <div className={`border rounded-xl p-3 sm:p-4 text-center ${saldo > 0 ? 'bg-green-50 border-green-100' : saldo === 0 && totalComprado > 0 ? 'bg-gray-50 border-gray-200' : 'bg-red-50 border-red-100'}`}>
-            <p className={`text-xs font-medium mb-1 ${saldo > 0 ? 'text-green-500' : 'text-red-500'}`}>Saldo</p>
-            <p className={`text-lg sm:text-2xl font-bold ${saldo > 0 ? 'text-green-700' : saldo < 0 ? 'text-red-700' : 'text-gray-600'}`}>
-              {saldo} mg
-            </p>
-            {saldo < 0 && <p className="text-xs text-red-500 mt-1">Negativo</p>}
-          </div>
-        </div>
-
-        {purchases.length > 0 && (
-          <div className="mb-4">
-            <p className="text-xs font-medium text-gray-500 mb-2">HISTÓRICO DE ENTRADAS</p>
-            <div className="space-y-1.5">
-              {purchases.map((pur) => (
-                <div key={pur.id} className="flex items-start justify-between gap-2 bg-blue-50/50 border border-blue-100 rounded-lg px-3 py-2 text-sm">
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 min-w-0">
-                    <span className="text-blue-600 font-semibold">+{pur.quantidade_mg} mg</span>
-                    <span className="text-gray-600">{format(new Date(pur.data_compra + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })}</span>
-                    {pur.lote && <span className="text-gray-400 text-xs">Lote: {pur.lote}</span>}
-                    {pur.observacoes && <span className="text-gray-400 text-xs truncate max-w-[120px]">{pur.observacoes}</span>}
-                  </div>
-                  <button onClick={() => deletePurchase(pur.id)} className="text-red-400 hover:text-red-600 text-xs flex-shrink-0">✕</button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {doses.filter(d => d.dose_mg).length > 0 && (
-          <div className="mb-4">
-            <p className="text-xs font-medium text-gray-500 mb-2">SAÍDAS POR DOSE APLICADA</p>
-            <div className="space-y-1.5">
-              {doses.filter(d => d.dose_mg).map((d) => (
-                <div key={d.id} className="flex items-center gap-3 bg-orange-50/50 border border-orange-100 rounded-lg px-3 py-2 text-sm">
-                  <span className="text-orange-600 font-semibold">−{d.dose_mg} mg</span>
-                  <span className="text-gray-600">{d.semana}ª semana</span>
-                  {d.data_aplicacao && <span className="text-gray-400 text-xs">{format(new Date(d.data_aplicacao + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })}</span>}
-                  {d.lote && <span className="text-gray-400 text-xs">Lote: {d.lote}</span>}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div className="border-t border-gray-100 pt-4">
-          <p className="text-xs font-medium text-gray-500 mb-3">REGISTRAR NOVA ENTRADA</p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">Data da compra *</label>
-              <input type="date" value={purchaseForm.data_compra}
-                onChange={(e) => setPurchaseForm(f => ({ ...f, data_compra: e.target.value }))}
-                className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">Quantidade (mg) *</label>
-              <input type="number" step="0.5" placeholder="Ex: 10" value={purchaseForm.quantidade_mg}
-                onChange={(e) => setPurchaseForm(f => ({ ...f, quantidade_mg: e.target.value }))}
-                className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">Lote</label>
-              <input type="text" placeholder="AB1234" value={purchaseForm.lote}
-                onChange={(e) => setPurchaseForm(f => ({ ...f, lote: e.target.value }))}
-                className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">Obs</label>
-              <input type="text" placeholder="Farmácia, recompra..." value={purchaseForm.observacoes}
-                onChange={(e) => setPurchaseForm(f => ({ ...f, observacoes: e.target.value }))}
-                className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
-            </div>
-          </div>
-          <button onClick={savePurchase} disabled={savingPurchase || !purchaseForm.quantidade_mg || !purchaseForm.data_compra}
-            className="mt-3 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50">
-            {savingPurchase ? 'Salvando...' : '+ Registrar Entrada'}
-          </button>
-        </div>
+      {/* Regras do passaporte */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6 text-xs text-gray-500 space-y-1.5">
+        <h2 className="font-bold text-gray-800 text-sm mb-2">Regras do Passaporte de Tratamento</h2>
+        <p>1. Em caso de não comparecimento no horário agendado, sem aviso prévio mínimo de 24 horas, o serviço constará como feito.</p>
+        <p>2. O pacote é intransferível, não podendo ser colocado outra pessoa no lugar.</p>
+        <p>3. O pacote deverá ser concluído no prazo de até {patient.prazo_dias ?? '___'} dias, contando da data da 1ª sessão.</p>
+        <p>4. Os resultados do tratamento dependem da realização das sessões conforme o protocolo e do cumprimento das orientações de rotina home care.</p>
       </div>
 
-      {/* Contrato */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-bold text-gray-800">Contrato TCLE</h2>
-          {statusBadge(contract?.status)}
-        </div>
-        {contract ? (
-          <div className="space-y-2 text-sm">
-            {contract.status === 'signed' ? (
-              <div className="flex items-center gap-2 text-green-700 bg-green-50 px-3 py-2 rounded-lg">
-                <span>✓</span>
-                <span>Assinado em {format(new Date(contract.signed_at!), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <p className="text-gray-500">Link (válido até {format(new Date(contract.expires_at), 'dd/MM/yyyy', { locale: ptBR })}):</p>
-                <div className="flex gap-2">
-                  <input readOnly value={contractUrl}
-                    className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-gray-50" />
-                  <button onClick={() => navigator.clipboard.writeText(contractUrl)}
-                    className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs transition-colors">
-                    Copiar
-                  </button>
-                </div>
-                <button onClick={reenviarContrato} className="text-sm text-brand hover:underline">Reenviar por email →</button>
-              </div>
-            )}
-            {contract.signature_data && (
-              <div className="mt-2">
-                <p className="text-xs text-gray-400 mb-1">Assinatura registrada:</p>
-                <img src={contract.signature_data} alt="Assinatura" className="border border-gray-200 rounded max-h-20" />
-              </div>
-            )}
-          </div>
-        ) : (
-          <p className="text-sm text-gray-400">Contrato não gerado.</p>
-        )}
-      </div>
-
-      {/* Gráfico de evolução */}
-      <EvolucaoChart evolucao={evolucao} doses={doses} />
-
-      {/* Doses */}
+      {/* Sessões */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
           <div>
-            <h2 className="font-bold text-gray-800">Esquema de Doses</h2>
-            <p className="text-xs text-gray-400 mt-0.5">{numSemanas} semanas cadastradas · {doses.filter(d => d.data_aplicacao).length} aplicadas</p>
+            <h2 className="font-bold text-gray-800">Controle de Realização de Procedimentos</h2>
+            <p className="text-xs text-gray-400 mt-0.5">{concluidas} de {numSessoes} sessões realizadas</p>
           </div>
-          {saldo > 0 && proximaSemana <= numSemanas && (
-            <div className="text-xs bg-green-50 border border-green-200 rounded-lg px-3 py-1.5 text-green-700">
-              Saldo p/ {proximaSemana}ª semana: <strong>{saldo} mg</strong>
-            </div>
-          )}
         </div>
 
         <div className="space-y-4">
-          {Array.from({ length: numSemanas }, (_, i) => i + 1).map((semana) => {
-            const saved = doses.find((d) => d.semana === semana)
-            const form = doseForm[semana] ?? {}
-            const isSaved = !!saved?.data_aplicacao
-            const doseSemana = Number(saved?.dose_mg ?? 0)
-            const saldoAposEsta = totalComprado - doses.filter(d => d.semana <= semana && d.dose_mg).reduce((a, d) => a + Number(d.dose_mg), 0)
-            const receitaUrl = (form.receita_url ?? saved?.receita_url) ?? null
+          {Array.from({ length: numSessoes }, (_, i) => i + 1).map((numero) => {
+            const saved = sessoes.find((s) => s.numero_sessao === numero)
+            const form = sessaoForm[numero] ?? {}
+            const isSaved = !!saved?.data_sessao
 
             return (
               <div
-                key={semana}
-                id={`semana-${semana}`}
+                key={numero}
+                id={`sessao-${numero}`}
                 className={`border rounded-xl p-4 transition-colors ${isSaved ? 'border-green-200 bg-green-50/30' : 'border-gray-200'}`}
               >
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="font-semibold text-gray-700">
-                    {semana}ª Semana / Retorno
-                    {isSaved && <span className="ml-2 text-xs text-green-600 font-normal">✓ Aplicada</span>}
+                    Sessão {numero}
+                    {isSaved && <span className="ml-2 text-xs text-green-600 font-normal">✓ Realizada</span>}
                   </h3>
-                  {isSaved && doseSemana > 0 && (
-                    <span className="text-xs text-gray-400">
-                      Saída: <span className="text-orange-600 font-medium">−{doseSemana} mg</span>
-                      {' '}→ Saldo após: <span className={`font-medium ${saldoAposEsta >= 0 ? 'text-green-600' : 'text-red-600'}`}>{saldoAposEsta} mg</span>
-                    </span>
-                  )}
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm mb-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm mb-3">
                   <div>
-                    <label className="text-xs text-gray-500 block mb-1">Dose aplicada (mg)</label>
-                    <input type="number" step="0.5"
-                      value={form.dose_mg ?? ''}
-                      onChange={(e) => setField(semana, 'dose_mg', e.target.value)}
-                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
-                      placeholder="2.5" />
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-500 block mb-1">Próxima dose (mg)</label>
-                    <input type="number" step="0.5"
-                      value={form.proxima_dose_mg ?? ''}
-                      onChange={(e) => setField(semana, 'proxima_dose_mg', e.target.value)}
-                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
-                      placeholder="5.0" />
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-500 block mb-1">Data da aplicação</label>
-                    <input type="date"
-                      value={form.data_aplicacao ?? ''}
-                      onChange={(e) => setField(semana, 'data_aplicacao', e.target.value)}
-                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-500 block mb-1">Lote</label>
+                    <label className="text-xs text-gray-500 block mb-1">Serviço realizado</label>
                     <input type="text"
-                      value={form.lote ?? ''}
-                      onChange={(e) => setField(semana, 'lote', e.target.value)}
+                      value={form.servico_realizado ?? ''}
+                      onChange={(e) => setField(numero, 'servico_realizado', e.target.value)}
                       className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
-                      placeholder="AB1234" />
+                      placeholder="Ex: Drenagem linfática" />
                   </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-3 text-sm mb-3 pt-2 border-t border-gray-100">
                   <div>
-                    <label className="text-xs text-gray-500 block mb-1">
-                      Próx. aplicação
-                      {form.data_aplicacao && !form.proxima_data_aplicacao && (
-                        <span className="text-brand ml-1">(auto)</span>
-                      )}
-                    </label>
+                    <label className="text-xs text-gray-500 block mb-1">Data</label>
                     <input type="date"
-                      value={form.proxima_data_aplicacao ?? ''}
-                      onChange={(e) => setField(semana, 'proxima_data_aplicacao', e.target.value)}
+                      value={form.data_sessao ?? ''}
+                      onChange={(e) => setField(numero, 'data_sessao', e.target.value)}
                       className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-500 block mb-1">Peso (kg)</label>
-                    <input type="number" step="0.1"
-                      value={evolucaoForm[semana]?.peso_kg ?? ''}
-                      onChange={(e) => setEvoField(semana, 'peso_kg', e.target.value)}
-                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
-                      placeholder="75.5" />
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-500 block mb-1">% Gordura <span className="text-gray-400">(opcional)</span></label>
-                    <input type="number" step="0.1" min="0" max="100"
-                      value={evolucaoForm[semana]?.gordura_pct ?? ''}
-                      onChange={(e) => setEvoField(semana, 'gordura_pct', e.target.value)}
-                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
-                      placeholder="28.5" />
-                  </div>
-                </div>
-
-                <div className="mb-3">
-                  <label className="text-xs text-gray-500 block mb-1">Observações</label>
-                  <input type="text"
-                    value={form.observacoes ?? ''}
-                    onChange={(e) => setField(semana, 'observacoes', e.target.value)}
-                    className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
-                    placeholder="Reações, intercorrências..." />
-                </div>
-
-                {/* Receita médica PDF */}
-                <div className="mb-3 pt-2 border-t border-gray-100">
-                  <label className="text-xs text-gray-500 block mb-1.5">Receita médica (PDF)</label>
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <label className={`cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
-                      uploadingPdf === semana
-                        ? 'opacity-50 cursor-not-allowed border-gray-200 text-gray-400'
-                        : 'border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300'
-                    }`}>
-                      📎 {uploadingPdf === semana ? 'Enviando...' : receitaUrl ? 'Substituir PDF' : 'Anexar PDF'}
-                      <input
-                        type="file"
-                        accept=".pdf,application/pdf"
-                        className="sr-only"
-                        disabled={uploadingPdf === semana}
-                        onChange={e => {
-                          const file = e.target.files?.[0]
-                          if (file) uploadReceita(semana, file)
-                          e.target.value = ''
-                        }}
-                      />
-                    </label>
-                    {receitaUrl && (
-                      <a
-                        href={receitaUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-xs text-brand hover:underline"
-                      >
-                        📄 Ver receita anexada
-                      </a>
-                    )}
                   </div>
                 </div>
 
                 {/* Assinatura */}
                 <div className="mb-3">
-                  {saved?.assinatura_paciente && activeSig !== semana ? (
+                  {saved?.assinatura_cliente && activeSig !== numero ? (
                     <div>
-                      <p className="text-xs text-gray-400 mb-1">Assinatura do paciente:</p>
-                      <img src={saved.assinatura_paciente} alt="Assinatura" className="border border-gray-200 rounded max-h-16" />
-                      <button onClick={() => setActiveSig(semana)} className="text-xs text-brand hover:underline mt-1 block">Refazer</button>
+                      <p className="text-xs text-gray-400 mb-1">Assinatura do cliente:</p>
+                      <img src={saved.assinatura_cliente} alt="Assinatura" className="border border-gray-200 rounded max-h-16" />
+                      <button onClick={() => setActiveSig(numero)} className="text-xs text-brand hover:underline mt-1 block">Refazer</button>
                     </div>
                   ) : (
                     <div>
-                      <label className="text-xs text-gray-500 block mb-1">Assinatura do paciente (opcional)</label>
-                      <SignaturePad ref={(el) => { sigRefs.current[semana] = el }} />
-                      <button onClick={() => sigRefs.current[semana]?.clear()} className="text-xs text-gray-400 hover:text-gray-600 mt-1">Limpar</button>
+                      <label className="text-xs text-gray-500 block mb-1">Assinatura do cliente</label>
+                      <SignaturePad ref={(el) => { sigRefs.current[numero] = el }} />
+                      <button onClick={() => sigRefs.current[numero]?.clear()} className="text-xs text-gray-400 hover:text-gray-600 mt-1">Limpar</button>
                     </div>
                   )}
                 </div>
 
                 <button
-                  onClick={() => saveDose(semana)}
-                  disabled={saving === semana}
+                  onClick={() => saveSessao(numero)}
+                  disabled={saving === numero}
                   className="w-full sm:w-auto bg-brand text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-dark transition-colors disabled:opacity-60"
                 >
-                  {saving === semana ? 'Salvando...' : isSaved ? 'Atualizar' : 'Salvar Dose'}
+                  {saving === numero ? 'Salvando...' : isSaved ? 'Atualizar' : 'Salvar Sessão'}
                 </button>
               </div>
             )
           })}
         </div>
 
-        {/* Botão adicionar retorno */}
         <button
-          onClick={addRetorno}
+          onClick={addSessao}
           className="mt-4 w-full py-3 border-2 border-dashed border-gray-200 rounded-xl text-sm text-gray-400 hover:border-brand hover:text-brand font-medium transition-colors"
         >
-          + Adicionar {numSemanas + 1}º Retorno
+          + Adicionar Sessão {numSessoes + 1}
         </button>
       </div>
     </div>

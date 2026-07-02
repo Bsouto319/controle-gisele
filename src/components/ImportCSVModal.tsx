@@ -8,11 +8,11 @@ interface Props {
 
 const FIELDS: { key: string; label: string; required?: boolean }[] = [
   { key: 'nome', label: 'Nome', required: true },
-  { key: 'cpf', label: 'CPF' },
-  { key: 'email', label: 'Email' },
-  { key: 'telefone', label: 'Telefone' },
-  { key: 'medico_prescritor', label: 'Médico prescritor' },
-  { key: 'dosagem_inicial_mg', label: 'Dosagem inicial (mg)' },
+  { key: 'pacote_contratado', label: 'Pacote contratado' },
+  { key: 'procedimento_contratado', label: 'Procedimento contratado' },
+  { key: 'data_inicial', label: 'Data inicial' },
+  { key: 'data_final', label: 'Data final' },
+  { key: 'prazo_dias', label: 'Prazo (dias)' },
   { key: 'observacoes', label: 'Observações' },
 ]
 
@@ -47,12 +47,12 @@ function parseCSV(text: string): string[][] {
 
 function autoMap(headers: string[]): Record<string, number> {
   const patterns: [string, string[]][] = [
-    ['nome', ['nome', 'name', 'paciente']],
-    ['cpf', ['cpf', 'documento', 'doc']],
-    ['email', ['email', 'mail']],
-    ['telefone', ['telefone', 'fone', 'celular', 'whatsapp', 'tel']],
-    ['medico_prescritor', ['medico', 'médico', 'prescritor', 'doutor', 'dr']],
-    ['dosagem_inicial_mg', ['dosagem', 'dose', 'mg']],
+    ['nome', ['nome', 'name', 'cliente', 'paciente']],
+    ['pacote_contratado', ['pacote', 'plano', 'contratado']],
+    ['procedimento_contratado', ['procedimento', 'servico', 'serviço']],
+    ['data_inicial', ['inicial', 'inicio', 'início']],
+    ['data_final', ['final', 'fim']],
+    ['prazo_dias', ['prazo', 'dias']],
     ['observacoes', ['obs', 'observa', 'nota']],
   ]
   const map: Record<string, number> = {}
@@ -129,18 +129,18 @@ export default function ImportCSVModal({ onClose, onSuccess }: Props) {
       const batch = rows.slice(i, i + BATCH).map((row) => {
         const rec: Record<string, unknown> = {
           nome: getCell(row, 'nome') || 'Sem nome',
-          cpf: getCell(row, 'cpf') || '',
-          email: getCell(row, 'email') || '',
-          telefone: getCell(row, 'telefone') || '',
-          medico_prescritor: getCell(row, 'medico_prescritor') || '',
+          pacote_contratado: getCell(row, 'pacote_contratado') || '',
+          procedimento_contratado: getCell(row, 'procedimento_contratado') || null,
+          data_inicial: getCell(row, 'data_inicial') || null,
+          data_final: getCell(row, 'data_final') || null,
           observacoes: getCell(row, 'observacoes') || null,
           ativo: true,
         }
-        const doseStr = getCell(row, 'dosagem_inicial_mg')
-        rec.dosagem_inicial_mg = doseStr ? (parseFloat(doseStr.replace(',', '.')) || null) : null
+        const prazoStr = getCell(row, 'prazo_dias')
+        rec.prazo_dias = prazoStr ? (parseInt(prazoStr, 10) || null) : null
         return rec
       })
-      const { error } = await supabase.from('pronutro_patients').insert(batch)
+      const { error } = await supabase.from('gisele_patients').insert(batch)
       if (error) errors += batch.length
       setProgress({ done: Math.min(i + BATCH, total), total, errors })
     }
@@ -157,9 +157,9 @@ export default function ImportCSVModal({ onClose, onSuccess }: Props) {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div>
-            <h2 className="font-semibold text-gray-800">Importar Pacientes via CSV</h2>
+            <h2 className="font-semibold text-gray-800">Importar Clientes via CSV</h2>
             {step === 'preview' && (
-              <p className="text-xs text-gray-400 mt-0.5">{rows.length} paciente{rows.length !== 1 ? 's' : ''} detectado{rows.length !== 1 ? 's' : ''}</p>
+              <p className="text-xs text-gray-400 mt-0.5">{rows.length} cliente{rows.length !== 1 ? 's' : ''} detectado{rows.length !== 1 ? 's' : ''}</p>
             )}
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
@@ -190,7 +190,7 @@ export default function ImportCSVModal({ onClose, onSuccess }: Props) {
               {error && <p className="text-sm text-red-500 mt-3 text-center">{error}</p>}
               <div className="mt-4 p-3 bg-gray-50 rounded-xl border border-gray-100">
                 <p className="text-xs text-gray-500 font-medium mb-1">Colunas reconhecidas automaticamente:</p>
-                <p className="text-xs text-gray-400">Nome, CPF, Email, Telefone / Celular / WhatsApp, Médico / Prescritor, Dosagem / Dose / mg, Obs / Observações</p>
+                <p className="text-xs text-gray-400">Nome, Pacote / Plano, Procedimento / Serviço, Data Inicial, Data Final, Prazo / Dias, Obs / Observações</p>
               </div>
             </div>
           )}

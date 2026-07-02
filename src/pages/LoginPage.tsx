@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import ProNutroLogo from '../components/ProNutroLogo'
+import GiseleLogo from '../components/GiseleLogo'
 import { useAuth } from '../hooks/useAuth'
 
 type Mode = 'login' | 'forgot' | 'sent'
@@ -35,7 +35,7 @@ export default function LoginPage() {
     setSubmitting(true)
     setError('')
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: 'https://controle-pronutro.vercel.app/reset-senha',
+      redirectTo: 'https://controle-gisele.vercel.app/reset-senha',
     })
     if (error) {
       setError('Erro ao enviar email. Verifique o endereço.')
@@ -50,13 +50,13 @@ export default function LoginPage() {
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-green-50/30 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-8 w-full max-w-sm">
         <div className="flex justify-center mb-7">
-          <ProNutroLogo width={200} textColor="#2d2d2d" />
+          <GiseleLogo width={200} textColor="#2d2d2d" />
         </div>
 
         {mode === 'login' && (
           <>
             <h1 className="text-base font-bold text-gray-800 text-center mb-0.5">Acesso ao Sistema</h1>
-            <p className="text-xs text-gray-400 text-center mb-6">Controle de Pacientes — Uso exclusivo da clínica</p>
+            <p className="text-xs text-gray-400 text-center mb-6">Passaporte de Tratamento — Uso exclusivo da clínica</p>
 
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
@@ -167,7 +167,7 @@ export default function LoginPage() {
         )}
 
         <p className="text-xs text-gray-300 text-center mt-6">
-          ProNutro · Sistema v1.0
+          Gisele Falcão · Sistema v1.0
         </p>
       </div>
     </div>

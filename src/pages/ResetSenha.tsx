@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import ProNutroLogo from '../components/ProNutroLogo'
+import GiseleLogo from '../components/GiseleLogo'
 
 export default function ResetSenha() {
   const navigate = useNavigate()
@@ -46,7 +46,7 @@ export default function ResetSenha() {
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-green-50/30 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-8 w-full max-w-sm">
         <div className="flex justify-center mb-7">
-          <ProNutroLogo width={200} textColor="#2d2d2d" />
+          <GiseleLogo width={200} textColor="#2d2d2d" />
         </div>
 
         <h1 className="text-base font-bold text-gray-800 text-center mb-0.5">Nova senha</h1>
@@ -109,7 +109,7 @@ export default function ResetSenha() {
         )}
 
         <p className="text-xs text-gray-300 text-center mt-6">
-          ProNutro · Sistema v1.0
+          Gisele Falcão · Sistema v1.0
         </p>
       </div>
     </div>

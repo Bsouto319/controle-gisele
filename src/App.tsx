@@ -4,7 +4,6 @@ import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 import Admin from './pages/Admin'
 import NovoPaciente from './pages/NovoPaciente'
-import Contrato from './pages/Contrato'
 import Paciente from './pages/Paciente'
 import LoginPage from './pages/LoginPage'
 import ResetSenha from './pages/ResetSenha'
@@ -27,9 +26,6 @@ export default function App() {
     <BrowserRouter>
       <AuthHashHandler />
       <Routes>
-        {/* Página pública — paciente assina sem login */}
-        <Route path="/contrato/:token" element={<Contrato />} />
-
         {/* Auth */}
         <Route path="/login" element={<LoginPage />} />
         <Route path="/reset-senha" element={<ResetSenha />} />

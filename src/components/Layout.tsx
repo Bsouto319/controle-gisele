@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import ProNutroLogo from './ProNutroLogo'
+import GiseleLogo from './GiseleLogo'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 
@@ -85,14 +85,14 @@ export default function Layout({ children }: { readonly children: React.ReactNod
       <header className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           <Link to="/" className="flex items-center gap-3 flex-shrink-0">
-            <ProNutroLogo width={190} textColor="#2d2d2d" />
+            <GiseleLogo width={190} textColor="#2d2d2d" />
             <span className="hidden sm:inline-block text-xs text-gray-400 border-l border-gray-200 pl-3 leading-tight whitespace-nowrap">
-              Controle de<br />Pacientes
+              Passaporte de<br />Tratamento
             </span>
           </Link>
 
           <nav className="flex items-center gap-1">
-            {navItem('/', 'Pacientes', 'Lista')}
+            {navItem('/', 'Clientes', 'Lista')}
             <Link
               to="/novo-paciente"
               className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -102,7 +102,7 @@ export default function Layout({ children }: { readonly children: React.ReactNod
               }`}
             >
               <span className="text-base leading-none">+</span>
-              <span className="hidden sm:inline">Novo Paciente</span>
+              <span className="hidden sm:inline">Novo Cliente</span>
               <span className="sm:hidden">Novo</span>
             </Link>
             <div className="flex items-center gap-2 ml-2 pl-2 border-l border-gray-200">
@@ -129,7 +129,7 @@ export default function Layout({ children }: { readonly children: React.ReactNod
 
       <footer className="border-t border-gray-100 mt-10 py-4 text-center">
         <p className="text-xs text-gray-400">
-          ProNutro · Nutrologia e Terapias Integrativas · Sistema de Controle v1.0
+          Gisele Falcão · Estética &amp; Fisioterapia · Sistema de Controle v1.0
         </p>
       </footer>
     </div>
