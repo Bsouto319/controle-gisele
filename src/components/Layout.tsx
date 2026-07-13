@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import GiseleLogo from './GiseleLogo'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { useIsAdmin } from '../hooks/useIsAdmin'
 
 function TrocarSenhaModal({ onClose }: { onClose: () => void }) {
   const [pwd, setPwd] = useState('')
@@ -59,6 +60,7 @@ function TrocarSenhaModal({ onClose }: { onClose: () => void }) {
 export default function Layout({ children }: { readonly children: React.ReactNode }) {
   const { pathname } = useLocation()
   const { user } = useAuth()
+  const { isAdmin } = useIsAdmin()
   const firstName = user?.user_metadata?.name ?? user?.email?.split('@')[0] ?? 'Admin'
   const [showPwd, setShowPwd] = useState(false)
 
@@ -93,6 +95,7 @@ export default function Layout({ children }: { readonly children: React.ReactNod
 
           <nav className="flex items-center gap-1">
             {navItem('/', 'Clientes', 'Lista')}
+            {isAdmin && navItem('/usuarios', 'Usuários', 'Users')}
             <Link
               to="/novo-paciente"
               className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${

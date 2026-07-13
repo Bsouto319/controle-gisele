@@ -5,10 +5,12 @@ import SignaturePad, { type SignaturePadHandle } from '../components/SignaturePa
 import type { GiselePatient, GiseleSessao } from '../types'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+import { useIsAdmin } from '../hooks/useIsAdmin'
 
 export default function Paciente() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { isAdmin } = useIsAdmin()
   const [patient, setPatient] = useState<GiselePatient | null>(null)
   const [sessoes, setSessoes] = useState<GiseleSessao[]>([])
   const [loading, setLoading] = useState(true)
@@ -221,12 +223,14 @@ export default function Paciente() {
             >
               {togglingStatus ? '...' : patient.ativo === false ? '✓ Reativar' : 'Inativar'}
             </button>
-            <button
-              onClick={deletarPaciente}
-              className="text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 font-medium transition-colors"
-            >
-              Apagar
-            </button>
+            {isAdmin && (
+              <button
+                onClick={deletarPaciente}
+                className="text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 font-medium transition-colors"
+              >
+                Apagar
+              </button>
+            )}
           </div>
         </div>
 
@@ -237,7 +241,7 @@ export default function Paciente() {
                 <span>
                   🔒 Pacote, procedimento e quantidade travados — cliente já assinou em {format(new Date(patient.pacote_travado_em), 'dd/MM/yyyy', { locale: ptBR })}.
                 </span>
-                {!desbloqueado && (
+                {!desbloqueado && isAdmin && (
                   <button
                     type="button"
                     onClick={() => {
