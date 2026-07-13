@@ -38,13 +38,14 @@ export default function Admin() {
 
   function exportCSV() {
     const rows = [
-      ['Nome', 'Email', 'Telefone', 'Pacote', 'Procedimento', 'Data Inicial', 'Data Final', 'Prazo (dias)', 'Sessões realizadas', 'Cadastro'],
+      ['Nome', 'Email', 'Telefone', 'Pacote', 'Procedimento', 'Sessões contratadas', 'Data Inicial', 'Data Final', 'Prazo (dias)', 'Sessões realizadas', 'Cadastro'],
       ...patients.map((p) => [
         p.nome,
         p.email ?? '',
         p.telefone ?? '',
         p.pacote_contratado,
         p.procedimento_contratado ?? '',
+        p.quantidade_sessoes ?? '',
         p.data_inicial ? format(new Date(p.data_inicial + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR }) : '',
         p.data_final ? format(new Date(p.data_final + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR }) : '',
         p.prazo_dias ?? '',
@@ -70,9 +71,9 @@ export default function Admin() {
   const filtered = byTab.filter((p) => p.nome.toLowerCase().includes(search.toLowerCase()))
 
   const totalConcluidos = ativos.filter((p) => {
-    const total = p.sessoes.length
+    const total = p.quantidade_sessoes ?? p.sessoes.length
     const feitas = p.sessoes.filter((s) => s.data_sessao).length
-    return total > 0 && feitas === total
+    return total > 0 && feitas >= total
   }).length
   const totalEmAndamento = ativos.length - totalConcluidos
 
@@ -186,7 +187,7 @@ export default function Admin() {
                   </div>
                   <div className="flex flex-wrap items-center gap-2 mt-3">
                     <span className="text-xs text-gray-400">{p.pacote_contratado}</span>
-                    <span className="text-xs bg-brand/10 text-brand px-1.5 py-0.5 rounded-full font-medium">{feitas}/{p.sessoes.length || 10}</span>
+                    <span className="text-xs bg-brand/10 text-brand px-1.5 py-0.5 rounded-full font-medium">{feitas}/{p.quantidade_sessoes ?? p.sessoes.length ?? '—'}</span>
                     <span className="text-xs text-gray-300 ml-auto">
                       {format(new Date(p.created_at), 'dd/MM/yy', { locale: ptBR })}
                     </span>

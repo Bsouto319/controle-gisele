@@ -14,6 +14,7 @@ export default function NovoPaciente() {
     telefone: '',
     pacote_contratado: '',
     procedimento_contratado: '',
+    quantidade_sessoes: '',
     data_inicial: '',
     data_final: '',
     prazo_dias: '',
@@ -42,6 +43,7 @@ export default function NovoPaciente() {
         telefone: form.telefone || null,
         pacote_contratado: form.pacote_contratado,
         procedimento_contratado: form.procedimento_contratado || null,
+        quantidade_sessoes: form.quantidade_sessoes ? Number(form.quantidade_sessoes) : null,
         data_inicial: form.data_inicial || null,
         data_final: form.data_final || null,
         prazo_dias: form.prazo_dias ? Number(form.prazo_dias) : null,
@@ -134,6 +136,18 @@ export default function NovoPaciente() {
                 onChange={(e) => set('procedimento_contratado', e.target.value)}
                 className={inputCls}
                 placeholder="Ex: Drenagem linfática, botox, etc."
+              />
+            </div>
+            <div>
+              <label className={labelCls}>Quantidade de sessões contratadas *</label>
+              <input
+                required
+                type="number"
+                min="1"
+                value={form.quantidade_sessoes}
+                onChange={(e) => set('quantidade_sessoes', e.target.value)}
+                className={inputCls}
+                placeholder="Ex: 5"
               />
             </div>
             <div>

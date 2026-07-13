@@ -11,6 +11,9 @@ export interface GiselePatient {
   observacoes: string | null
   ativo: boolean
   created_at: string
+  quantidade_sessoes: number | null
+  pacote_travado_em: string | null
+  pacote_concluido_notificado_em: string | null
 }
 
 export interface GiseleSessao {

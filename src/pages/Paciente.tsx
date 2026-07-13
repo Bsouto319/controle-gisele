@@ -17,11 +17,15 @@ export default function Paciente() {
   const [sessaoForm, setSessaoForm] = useState<Record<number, Partial<GiseleSessao>>>({})
   const [activeSig, setActiveSig] = useState<number | null>(null)
   const [numSessoes, setNumSessoes] = useState(10)
+  const [expandedSessoes, setExpandedSessoes] = useState<Record<number, boolean>>({})
+  const [notificandoConclusao, setNotificandoConclusao] = useState(false)
+  const scrolledRef = useRef(false)
 
   // Edição de dados do cliente
   const [editingPatient, setEditingPatient] = useState(false)
   const [editForm, setEditForm] = useState<Partial<GiselePatient>>({})
   const [savingEdit, setSavingEdit] = useState(false)
+  const [desbloqueado, setDesbloqueado] = useState(false)
 
   const sigRefs = useRef<Record<number, SignaturePadHandle | null>>({})
 
@@ -34,16 +38,30 @@ export default function Paciente() {
     setSessoes(s ?? [])
 
     const maxExisting = s && s.length > 0 ? Math.max(...(s as GiseleSessao[]).map(r => r.numero_sessao)) : 0
-    const total = Math.max(10, maxExisting)
+    const total = p?.quantidade_sessoes ? Math.max(p.quantidade_sessoes, maxExisting) : Math.max(10, maxExisting)
     setNumSessoes(total)
 
     const initial: Record<number, Partial<GiseleSessao>> = {}
+    const expanded: Record<number, boolean> = {}
     for (let n = 1; n <= total; n++) {
       const found = (s as GiseleSessao[])?.find(r => r.numero_sessao === n)
       initial[n] = found ?? { numero_sessao: n }
+      expanded[n] = !found?.data_sessao
     }
     setSessaoForm(initial)
+    setExpandedSessoes(expanded)
     setLoading(false)
+
+    if (!scrolledRef.current) {
+      scrolledRef.current = true
+      const primeiraPendente = Array.from({ length: total }, (_, i) => i + 1)
+        .find(n => !(s as GiseleSessao[])?.find(r => r.numero_sessao === n)?.data_sessao)
+      if (primeiraPendente) {
+        setTimeout(() => {
+          document.getElementById(`sessao-${primeiraPendente}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }, 150)
+      }
+    }
   }
 
   useEffect(() => { loadData() }, [id])
@@ -74,9 +92,39 @@ export default function Paciente() {
     }
 
     const { data: updated } = await supabase.from('gisele_sessoes').select('*').eq('patient_id', id).order('numero_sessao')
-    setSessoes(updated ?? [])
+    const updatedSessoes = (updated ?? []) as GiseleSessao[]
+    setSessoes(updatedSessoes)
     setActiveSig(null)
     setSaving(null)
+    setExpandedSessoes(f => ({ ...f, [numero]: false, [numero + 1]: true }))
+
+    // Trava o pacote (quantidade/procedimento) na primeira assinatura do cliente
+    if (sigData && patient && !patient.pacote_travado_em) {
+      const travadoEm = new Date().toISOString()
+      await supabase.from('gisele_patients').update({ pacote_travado_em: travadoEm }).eq('id', patient.id)
+      setPatient(p => p ? { ...p, pacote_travado_em: travadoEm } : p)
+    }
+
+    // Sinaliza a Dra. Gisele quando o pacote inteiro (quantidade contratada) for concluído
+    const total = patient?.quantidade_sessoes ?? numSessoes
+    const concluidasAgora = updatedSessoes.filter(s => s.data_sessao).length
+    if (patient && !patient.pacote_concluido_notificado_em && concluidasAgora >= total) {
+      await notificarPacoteConcluido()
+    }
+  }
+
+  async function notificarPacoteConcluido() {
+    if (!patient) return
+    setNotificandoConclusao(true)
+    const { error } = await supabase.functions.invoke('notify-gisele-package-complete', {
+      body: { patient_id: patient.id, patient_name: patient.nome, quantidade_sessoes: patient.quantidade_sessoes ?? numSessoes },
+    })
+    if (!error) {
+      const notificadoEm = new Date().toISOString()
+      await supabase.from('gisele_patients').update({ pacote_concluido_notificado_em: notificadoEm }).eq('id', patient.id)
+      setPatient(p => p ? { ...p, pacote_concluido_notificado_em: notificadoEm } : p)
+    }
+    setNotificandoConclusao(false)
   }
 
   async function savePatientEdit() {
@@ -121,6 +169,9 @@ export default function Paciente() {
   if (!patient) return <div className="py-12 text-center text-gray-400">Cliente não encontrado.</div>
 
   const concluidas = sessoes.filter(s => s.data_sessao).length
+  const travado = !!patient.pacote_travado_em && !desbloqueado
+  const lockedInputCls = 'w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm bg-gray-100 text-gray-500 cursor-not-allowed'
+  const normalInputCls = 'w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand'
 
   return (
     <div className="space-y-6">
@@ -145,11 +196,13 @@ export default function Paciente() {
                     telefone: patient.telefone,
                     pacote_contratado: patient.pacote_contratado,
                     procedimento_contratado: patient.procedimento_contratado,
+                    quantidade_sessoes: patient.quantidade_sessoes,
                     data_inicial: patient.data_inicial,
                     data_final: patient.data_final,
                     prazo_dias: patient.prazo_dias,
                     observacoes: patient.observacoes,
                   })
+                  setDesbloqueado(false)
                   setEditingPatient(true)
                 }}
                 className="text-xs px-3 py-1.5 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 font-medium transition-colors"
@@ -179,6 +232,26 @@ export default function Paciente() {
 
         {editingPatient ? (
           <div className="space-y-3">
+            {patient.pacote_travado_em && (
+              <div className="flex items-center justify-between gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+                <span>
+                  🔒 Pacote, procedimento e quantidade travados — cliente já assinou em {format(new Date(patient.pacote_travado_em), 'dd/MM/yyyy', { locale: ptBR })}.
+                </span>
+                {!desbloqueado && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm('Desbloquear esses campos? Isso permite alterar o que o cliente já assinou como contratado. Use apenas para corrigir erro de cadastro.')) {
+                        setDesbloqueado(true)
+                      }
+                    }}
+                    className="text-amber-800 underline font-medium flex-shrink-0"
+                  >
+                    Desbloquear
+                  </button>
+                )}
+              </div>
+            )}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               <div className="col-span-2 sm:col-span-3">
                 <label className="text-xs text-gray-500 block mb-1">Nome completo</label>
@@ -208,17 +281,30 @@ export default function Paciente() {
               <div className="col-span-2 sm:col-span-3">
                 <label className="text-xs text-gray-500 block mb-1">Pacote aderido / contratado</label>
                 <input
+                  disabled={travado}
                   value={editForm.pacote_contratado ?? ''}
                   onChange={e => setEditForm(f => ({ ...f, pacote_contratado: e.target.value }))}
-                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
+                  className={travado ? lockedInputCls : normalInputCls}
                 />
               </div>
               <div className="col-span-2 sm:col-span-3">
                 <label className="text-xs text-gray-500 block mb-1">Procedimento contratado</label>
                 <input
+                  disabled={travado}
                   value={editForm.procedimento_contratado ?? ''}
                   onChange={e => setEditForm(f => ({ ...f, procedimento_contratado: e.target.value }))}
-                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
+                  className={travado ? lockedInputCls : normalInputCls}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Quantidade de sessões contratadas</label>
+                <input
+                  type="number"
+                  min="1"
+                  disabled={travado}
+                  value={editForm.quantidade_sessoes ?? ''}
+                  onChange={e => setEditForm(f => ({ ...f, quantidade_sessoes: e.target.value ? Number(e.target.value) : null }))}
+                  className={travado ? lockedInputCls : normalInputCls}
                 />
               </div>
               <div>
@@ -281,6 +367,7 @@ export default function Paciente() {
               <div><span className="text-gray-500">Telefone:</span><br /><span className="font-medium">{patient.telefone || '—'}</span></div>
               <div><span className="text-gray-500">Pacote:</span><br /><span className="font-medium">{patient.pacote_contratado || '—'}</span></div>
               <div><span className="text-gray-500">Procedimento:</span><br /><span className="font-medium">{patient.procedimento_contratado || '—'}</span></div>
+              <div><span className="text-gray-500">Sessões contratadas:</span><br /><span className="font-medium">{patient.quantidade_sessoes ?? '—'} {patient.pacote_travado_em && <span title="Travado após assinatura">🔒</span>}</span></div>
               <div><span className="text-gray-500">Prazo:</span><br /><span className="font-medium">{patient.prazo_dias ? `${patient.prazo_dias} dias` : '—'}</span></div>
               <div><span className="text-gray-500">Data inicial:</span><br /><span className="font-medium">{patient.data_inicial ? format(new Date(patient.data_inicial + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR }) : '—'}</span></div>
               <div><span className="text-gray-500">Data final:</span><br /><span className="font-medium">{patient.data_final ? format(new Date(patient.data_final + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR }) : '—'}</span></div>
@@ -309,27 +396,64 @@ export default function Paciente() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
           <div>
             <h2 className="font-bold text-gray-800">Controle de Realização de Procedimentos</h2>
-            <p className="text-xs text-gray-400 mt-0.5">{concluidas} de {numSessoes} sessões realizadas</p>
+            <p className="text-xs text-gray-400 mt-0.5">{concluidas} de {patient.quantidade_sessoes ?? numSessoes} sessões contratadas realizadas</p>
           </div>
         </div>
 
-        <div className="space-y-4">
+        {patient.quantidade_sessoes && concluidas >= patient.quantidade_sessoes && (
+          <div className="flex items-center justify-between gap-2 bg-green-50 border border-green-200 rounded-xl px-4 py-3 mb-4 text-sm text-green-700">
+            <span>🎉 Pacote de {patient.quantidade_sessoes} sessões concluído!{patient.pacote_concluido_notificado_em ? ' A Dra. Gisele já foi avisada.' : ''}</span>
+            {!patient.pacote_concluido_notificado_em && (
+              <button
+                onClick={notificarPacoteConcluido}
+                disabled={notificandoConclusao}
+                className="text-green-800 underline font-medium flex-shrink-0 disabled:opacity-50"
+              >
+                {notificandoConclusao ? 'Avisando...' : 'Avisar Dra. Gisele'}
+              </button>
+            )}
+          </div>
+        )}
+
+        <div className="space-y-3">
           {Array.from({ length: numSessoes }, (_, i) => i + 1).map((numero) => {
             const saved = sessoes.find((s) => s.numero_sessao === numero)
             const form = sessaoForm[numero] ?? {}
             const isSaved = !!saved?.data_sessao
+            const isProximaPendente = !isSaved && Array.from({ length: numSessoes }, (_, i) => i + 1).find(n => !sessoes.find(s => s.numero_sessao === n)?.data_sessao) === numero
+            const expanded = expandedSessoes[numero] ?? !isSaved
+
+            if (isSaved && !expanded) {
+              return (
+                <button
+                  key={numero}
+                  id={`sessao-${numero}`}
+                  onClick={() => setExpandedSessoes(f => ({ ...f, [numero]: true }))}
+                  className="w-full flex items-center justify-between border border-green-200 bg-green-50/30 rounded-xl p-3 text-left hover:bg-green-50 transition-colors"
+                >
+                  <span className="text-sm font-medium text-gray-700">
+                    Sessão {numero} <span className="text-xs text-green-600 font-normal">✓ Realizada em {saved?.data_sessao ? format(new Date(saved.data_sessao + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR }) : '—'}</span>
+                  </span>
+                  <span className="text-xs text-gray-400">Expandir ▾</span>
+                </button>
+              )
+            }
 
             return (
               <div
                 key={numero}
                 id={`sessao-${numero}`}
-                className={`border rounded-xl p-4 transition-colors ${isSaved ? 'border-green-200 bg-green-50/30' : 'border-gray-200'}`}
+                className={`scroll-mt-24 border rounded-xl p-4 transition-colors ${isSaved ? 'border-green-200 bg-green-50/30' : isProximaPendente ? 'border-brand ring-2 ring-brand/30' : 'border-gray-200'}`}
               >
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="font-semibold text-gray-700">
                     Sessão {numero}
                     {isSaved && <span className="ml-2 text-xs text-green-600 font-normal">✓ Realizada</span>}
+                    {isProximaPendente && <span className="ml-2 text-xs text-brand font-normal">← próxima a preencher</span>}
                   </h3>
+                  {isSaved && (
+                    <button onClick={() => setExpandedSessoes(f => ({ ...f, [numero]: false }))} className="text-xs text-gray-400 hover:text-gray-600">Recolher ▴</button>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm mb-3">
