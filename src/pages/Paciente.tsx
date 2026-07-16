@@ -170,7 +170,9 @@ export default function Paciente() {
     const { data, error } = await supabase.from('gisele_aplicacoes_faciais').insert(nova).select('*').single()
     if (!error && data) {
       setAplicacoesFaciais(prev => [...prev, data as AplicacaoFacial])
+      return (data as AplicacaoFacial).id
     }
+    return null
   }
 
   async function deleteAplicacaoFacial(aplicacaoId: string) {
@@ -448,7 +450,7 @@ export default function Paciente() {
           aplicacoes={aplicacoesFaciais}
           onAdd={addAplicacaoFacial}
           onDelete={deleteAplicacaoFacial}
-          canDelete={isAdmin}
+          canDelete
         />
       </div>
 

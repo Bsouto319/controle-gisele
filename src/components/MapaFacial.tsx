@@ -38,7 +38,7 @@ function geometriaEtiqueta(px: number, py: number, w: number, h: number) {
 interface Props {
   patientId: string
   aplicacoes: AplicacaoFacial[]
-  onAdd: (novo: Omit<AplicacaoFacial, 'id' | 'created_at'>) => Promise<void>
+  onAdd: (novo: Omit<AplicacaoFacial, 'id' | 'created_at'>) => Promise<string | null>
   onDelete: (id: string) => Promise<void>
   canDelete: boolean
 }
@@ -85,7 +85,7 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
     const quantidade = dose ?? Number(doseCustom)
     if (!pontoNovo || !quantidade) return
     setSaving(true)
-    await onAdd({
+    const novoId = await onAdd({
       patient_id: patientId,
       pos_x: pontoNovo.x,
       pos_y: pontoNovo.y,
@@ -98,6 +98,9 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
     })
     setSaving(false)
     setPontoNovo(null)
+    // Mostra a aplicação recem-salva no painel na hora — se foi engano, o botão
+    // "Apagar" já aparece ali, sem precisar caçar o ponto certo no rosto.
+    if (novoId) setSelecionado(novoId)
   }
 
   const historico = [...aplicacoes].sort((a, b) => (a.data_aplicacao < b.data_aplicacao ? 1 : -1))
