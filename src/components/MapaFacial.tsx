@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import type { AplicacaoFacial } from '../types'
@@ -13,8 +13,26 @@ const PRODUTOS = [
 
 const DOSES_RAPIDAS = [1, 2, 2.5, 4, 5, 10]
 
+// Centro aproximado do rosto (mesmas coordenadas percentuais do mapa) — as
+// etiquetas de dose saem radialmente pra fora a partir daqui, com uma linha-guia,
+// pra não ficar tudo empilhado em cima do rosto.
+const CENTRO_X = 50
+const CENTRO_Y = 45
+
 function corProduto(produto: string) {
   return PRODUTOS.find(p => p.nome === produto)?.cor ?? '#6b7280'
+}
+
+function geometriaEtiqueta(px: number, py: number, w: number, h: number) {
+  const dx = (px - CENTRO_X) / 100 * w
+  const dy = (py - CENTRO_Y) / 100 * h
+  const len = Math.hypot(dx, dy) || 1
+  const ux = dx / len, uy = dy / len
+  const linha = 30
+  const lx = px + (ux * linha / w) * 100
+  const ly = py + (uy * linha / h) * 100
+  const angulo = Math.atan2(dy, dx) * 180 / Math.PI
+  return { lx, ly, angulo, linha }
 }
 
 interface Props {
@@ -29,6 +47,7 @@ interface PontoNovo { x: number; y: number; side: 'left' | 'right'; vSide: 'top'
 
 export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, canDelete }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const [size, setSize] = useState({ w: 320, h: 400 })
   const [pontoNovo, setPontoNovo] = useState<PontoNovo | null>(null)
   const [selecionado, setSelecionado] = useState<string | null>(null)
   const [produto, setProduto] = useState<string>('Botox')
@@ -37,6 +56,17 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
   const [mostrarNota, setMostrarNota] = useState(false)
   const [nota, setNota] = useState('')
   const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const ro = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect
+      if (width > 0 && height > 0) setSize({ w: width, h: height })
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   function handleFaceClick(e: React.MouseEvent<HTMLDivElement>) {
     if (!containerRef.current) return
@@ -93,49 +123,52 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
               <path d="M 82 196 L 76 236 M 118 196 L 124 236" />
               <path d="M 40 236 Q 60 210 76 200 M 160 236 Q 140 210 124 200" strokeWidth="1.4" />
               {/* Orelhas */}
-              <path d="M 58 118 Q 47 116 46 128 Q 45 142 57 146" />
-              <path d="M 142 118 Q 153 116 154 128 Q 155 142 143 146" />
+              <path d="M 60 122 Q 49 120 48 132 Q 47 145 58 149" />
+              <path d="M 140 122 Q 151 120 152 132 Q 153 145 142 149" />
               {/* Contorno do rosto */}
-              <path d="M100,26 C78,26 62,42 58,68 C54,90 54,104 58,120 C50,140 52,160 62,176 C72,192 86,203 100,204 C114,203 128,192 138,176 C148,160 150,140 142,120 C146,104 146,90 142,68 C138,42 122,26 100,26 Z" />
-              {/* Linha do cabelo */}
-              <path d="M 58 66 Q 100 34 142 66" strokeWidth="1.3" />
+              <path d="M100,28 C80,28 65,44 61,70 C58,92 58,106 61,122 C54,142 55,161 64,177 C74,193 87,203 100,204 C113,203 126,193 136,177 C145,161 146,142 139,122 C142,106 142,92 139,70 C135,44 120,28 100,28 Z" />
               {/* Sobrancelhas */}
-              <path d="M 70 98 Q 82 90 95 96" strokeWidth="1.8" />
-              <path d="M 105 96 Q 118 90 130 98" strokeWidth="1.8" />
+              <path d="M 72 100 Q 84 92 96 98" strokeWidth="1.8" />
+              <path d="M 104 98 Q 116 92 128 100" strokeWidth="1.8" />
               {/* Olhos */}
-              <path d="M 70 112 Q 80 106 91 112 Q 80 118 70 112 Z" strokeWidth="1.3" />
-              <path d="M 109 112 Q 120 106 130 112 Q 120 118 109 112 Z" strokeWidth="1.3" />
+              <path d="M 72 114 Q 82 108 92 114 Q 82 120 72 114 Z" strokeWidth="1.3" />
+              <path d="M 108 114 Q 118 108 128 114 Q 118 120 108 114 Z" strokeWidth="1.3" />
               {/* Nariz */}
-              <path d="M 98 114 Q 92 138 89 148 Q 94 154 100 152 Q 106 154 111 148" strokeWidth="1.3" />
+              <path d="M 98 116 Q 92 138 89 148 Q 94 154 100 152 Q 106 154 111 148" strokeWidth="1.3" />
               {/* Boca */}
-              <path d="M 82 172 Q 100 180 118 172" strokeWidth="1.8" />
-              {/* Sulco nasolabial (bem sutil) */}
-              <path d="M 84 150 Q 80 162 84 172" strokeWidth="0.9" opacity="0.5" />
-              <path d="M 116 150 Q 120 162 116 172" strokeWidth="0.9" opacity="0.5" />
+              <path d="M 84 172 Q 100 180 116 172" strokeWidth="1.8" />
             </g>
           </svg>
 
-          {/* Marcadores das aplicações já salvas, com a dose ao lado (igual referência) */}
-          {aplicacoes.map((a) => (
-            <button
-              key={a.id}
-              type="button"
-              onClick={(e) => { e.stopPropagation(); setPontoNovo(null); setSelecionado(s => s === a.id ? null : a.id) }}
-              className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center gap-1 group"
-              style={{ left: `${a.pos_x}%`, top: `${a.pos_y}%` }}
-            >
-              <span
-                className="block rounded-full border-2 border-white shadow-sm transition-transform group-active:scale-90"
-                style={{ width: selecionado === a.id ? 18 : 14, height: selecionado === a.id ? 18 : 14, background: corProduto(a.produto) }}
-              />
-              <span
-                className="text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white shadow-sm whitespace-nowrap"
-                style={{ background: corProduto(a.produto) }}
-              >
-                {a.quantidade}
-              </span>
-            </button>
-          ))}
+          {/* Marcadores das aplicações já salvas: ponto + linha-guia + etiqueta com a dose (estilo mapa clínico) */}
+          {aplicacoes.map((a) => {
+            const { lx, ly, angulo, linha } = geometriaEtiqueta(a.pos_x, a.pos_y, size.w, size.h)
+            const ativo = selecionado === a.id
+            return (
+              <div key={a.id}>
+                <div
+                  className="absolute h-px origin-left pointer-events-none"
+                  style={{
+                    left: `${a.pos_x}%`, top: `${a.pos_y}%`,
+                    width: linha, background: '#b9a48f',
+                    transform: `rotate(${angulo}deg)`,
+                  }}
+                />
+                <span
+                  className="absolute -translate-x-1/2 -translate-y-1/2 block rounded-full border-2 border-white shadow-sm pointer-events-none"
+                  style={{ left: `${a.pos_x}%`, top: `${a.pos_y}%`, width: ativo ? 12 : 8, height: ativo ? 12 : 8, background: corProduto(a.produto) }}
+                />
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setPontoNovo(null); setSelecionado(s => s === a.id ? null : a.id) }}
+                  className="absolute -translate-x-1/2 -translate-y-1/2 text-[10px] font-bold px-1.5 py-0.5 rounded-md text-white shadow-sm whitespace-nowrap transition-transform active:scale-90"
+                  style={{ left: `${lx}%`, top: `${ly}%`, background: corProduto(a.produto) }}
+                >
+                  {a.quantidade}{a.unidade === 'ml' ? 'ml' : ''}
+                </button>
+              </div>
+            )
+          })}
 
           {/* Ponto sendo posicionado agora */}
           {pontoNovo && (
@@ -228,7 +261,7 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
           )}
         </div>
 
-        <p className="text-xs text-gray-400 mt-2 text-center">Toque no rosto pra marcar uma aplicação · toque num ponto marcado pra ver os detalhes</p>
+        <p className="text-xs text-gray-400 mt-2 text-center">Toque no rosto pra marcar uma aplicação · toque numa etiqueta pra ver os detalhes</p>
 
         {selecionado && (() => {
           const a = aplicacoes.find(x => x.id === selecionado)
