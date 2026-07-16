@@ -14,11 +14,13 @@ export interface GiselePatient {
   quantidade_sessoes: number | null
   pacote_travado_em: string | null
   pacote_concluido_notificado_em: string | null
+  ciclo_atual: number
 }
 
 export interface GiseleSessao {
   id: string
   patient_id: string
+  ciclo: number
   numero_sessao: number
   servico_realizado: string | null
   data_sessao: string | null

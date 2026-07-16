@@ -21,6 +21,8 @@ export default function Paciente() {
   const [numSessoes, setNumSessoes] = useState(10)
   const [expandedSessoes, setExpandedSessoes] = useState<Record<number, boolean>>({})
   const [notificandoConclusao, setNotificandoConclusao] = useState(false)
+  const [iniciandoPacote, setIniciandoPacote] = useState(false)
+  const [expandedCiclos, setExpandedCiclos] = useState<Record<number, boolean>>({})
   const scrolledRef = useRef(false)
 
   // Edição de dados do cliente
@@ -39,14 +41,17 @@ export default function Paciente() {
     setPatient(p)
     setSessoes(s ?? [])
 
-    const maxExisting = s && s.length > 0 ? Math.max(...(s as GiseleSessao[]).map(r => r.numero_sessao)) : 0
+    // Só a sessão/formulário do ciclo (pacote) em andamento — pacotes anteriores ficam só no histórico
+    const cicloAtualLoad = p?.ciclo_atual ?? 1
+    const sessoesAtualLoad = ((s as GiseleSessao[]) ?? []).filter(r => r.ciclo === cicloAtualLoad)
+    const maxExisting = sessoesAtualLoad.length > 0 ? Math.max(...sessoesAtualLoad.map(r => r.numero_sessao)) : 0
     const total = p?.quantidade_sessoes ? Math.max(p.quantidade_sessoes, maxExisting) : Math.max(10, maxExisting)
     setNumSessoes(total)
 
     const initial: Record<number, Partial<GiseleSessao>> = {}
     const expanded: Record<number, boolean> = {}
     for (let n = 1; n <= total; n++) {
-      const found = (s as GiseleSessao[])?.find(r => r.numero_sessao === n)
+      const found = sessoesAtualLoad.find(r => r.numero_sessao === n)
       initial[n] = found ?? { numero_sessao: n }
       expanded[n] = !found?.data_sessao
     }
@@ -57,7 +62,7 @@ export default function Paciente() {
     if (!scrolledRef.current) {
       scrolledRef.current = true
       const primeiraPendente = Array.from({ length: total }, (_, i) => i + 1)
-        .find(n => !(s as GiseleSessao[])?.find(r => r.numero_sessao === n)?.data_sessao)
+        .find(n => !sessoesAtualLoad.find(r => r.numero_sessao === n)?.data_sessao)
       if (primeiraPendente) {
         setTimeout(() => {
           document.getElementById(`sessao-${primeiraPendente}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -76,9 +81,11 @@ export default function Paciente() {
     const data = sessaoForm[numero]
     const sig = sigRefs.current[numero]
     const sigData = sig && !sig.isEmpty() ? sig.toDataURL() : (data.assinatura_cliente ?? null)
+    const cicloAtual = patient?.ciclo_atual ?? 1
 
     const payload = {
       patient_id: id!,
+      ciclo: cicloAtual,
       numero_sessao: numero,
       servico_realizado: data.servico_realizado ?? null,
       data_sessao: data.data_sessao ?? null,
@@ -86,7 +93,7 @@ export default function Paciente() {
       assinatura_cliente: sigData,
     }
 
-    const existing = sessoes.find((s) => s.numero_sessao === numero)
+    const existing = sessoes.find((s) => s.numero_sessao === numero && s.ciclo === cicloAtual)
     if (existing) {
       await supabase.from('gisele_sessoes').update(payload).eq('id', existing.id)
     } else {
@@ -109,10 +116,27 @@ export default function Paciente() {
 
     // Sinaliza a Dra. Gisele quando o pacote inteiro (quantidade contratada) for concluído
     const total = patient?.quantidade_sessoes ?? numSessoes
-    const concluidasAgora = updatedSessoes.filter(s => s.data_sessao).length
+    const concluidasAgora = updatedSessoes.filter(s => s.data_sessao && s.ciclo === cicloAtual).length
     if (patient && !patient.pacote_concluido_notificado_em && concluidasAgora >= total) {
       await notificarPacoteConcluido()
     }
+  }
+
+  async function iniciarNovoPacote() {
+    if (!patient) return
+    if (!confirm(`Arquivar o pacote atual de ${patient.nome} no histórico e iniciar um novo pacote?`)) return
+    setIniciandoPacote(true)
+    const novoCiclo = (patient.ciclo_atual ?? 1) + 1
+    await supabase.from('gisele_patients').update({
+      ciclo_atual: novoCiclo,
+      pacote_travado_em: null,
+      pacote_concluido_notificado_em: null,
+    }).eq('id', patient.id)
+    setPatient(p => p ? { ...p, ciclo_atual: novoCiclo, pacote_travado_em: null, pacote_concluido_notificado_em: null } : p)
+    setNumSessoes(patient.quantidade_sessoes ?? 10)
+    setSessaoForm({})
+    setExpandedSessoes({})
+    setIniciandoPacote(false)
   }
 
   async function notificarPacoteConcluido() {
@@ -170,7 +194,10 @@ export default function Paciente() {
   if (loading) return <div className="py-12 text-center text-gray-400">Carregando...</div>
   if (!patient) return <div className="py-12 text-center text-gray-400">Cliente não encontrado.</div>
 
-  const concluidas = sessoes.filter(s => s.data_sessao).length
+  const cicloAtual = patient.ciclo_atual ?? 1
+  const sessoesAtual = sessoes.filter(s => s.ciclo === cicloAtual)
+  const concluidas = sessoesAtual.filter(s => s.data_sessao).length
+  const ciclosAnteriores = Array.from(new Set(sessoes.filter(s => s.ciclo < cicloAtual).map(s => s.ciclo))).sort((a, b) => b - a)
   const travado = !!patient.pacote_travado_em && !desbloqueado
   const lockedInputCls = 'w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm bg-gray-100 text-gray-500 cursor-not-allowed'
   const normalInputCls = 'w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand'
@@ -399,32 +426,43 @@ export default function Paciente() {
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
           <div>
-            <h2 className="font-bold text-gray-800">Controle de Realização de Procedimentos</h2>
+            <h2 className="font-bold text-gray-800">
+              Controle de Realização de Procedimentos{cicloAtual > 1 && <span className="ml-2 text-xs font-normal bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full align-middle">Pacote {cicloAtual}</span>}
+            </h2>
             <p className="text-xs text-gray-400 mt-0.5">{concluidas} de {patient.quantidade_sessoes ?? numSessoes} sessões contratadas realizadas</p>
           </div>
         </div>
 
         {patient.quantidade_sessoes && concluidas >= patient.quantidade_sessoes && (
-          <div className="flex items-center justify-between gap-2 bg-green-50 border border-green-200 rounded-xl px-4 py-3 mb-4 text-sm text-green-700">
+          <div className="flex items-center justify-between gap-2 flex-wrap bg-green-50 border border-green-200 rounded-xl px-4 py-3 mb-4 text-sm text-green-700">
             <span>🎉 Pacote de {patient.quantidade_sessoes} sessões concluído!{patient.pacote_concluido_notificado_em ? ' A Dra. Gisele já foi avisada.' : ''}</span>
-            {!patient.pacote_concluido_notificado_em && (
+            <div className="flex items-center gap-3 flex-shrink-0">
+              {!patient.pacote_concluido_notificado_em && (
+                <button
+                  onClick={notificarPacoteConcluido}
+                  disabled={notificandoConclusao}
+                  className="text-green-800 underline font-medium disabled:opacity-50"
+                >
+                  {notificandoConclusao ? 'Avisando...' : 'Avisar Dra. Gisele'}
+                </button>
+              )}
               <button
-                onClick={notificarPacoteConcluido}
-                disabled={notificandoConclusao}
-                className="text-green-800 underline font-medium flex-shrink-0 disabled:opacity-50"
+                onClick={iniciarNovoPacote}
+                disabled={iniciandoPacote}
+                className="text-xs px-3 py-1.5 rounded-lg border border-green-300 bg-white text-green-700 hover:bg-green-50 font-medium transition-colors disabled:opacity-50"
               >
-                {notificandoConclusao ? 'Avisando...' : 'Avisar Dra. Gisele'}
+                {iniciandoPacote ? 'Iniciando...' : '▶ Iniciar Novo Pacote'}
               </button>
-            )}
+            </div>
           </div>
         )}
 
         <div className="space-y-3">
           {Array.from({ length: numSessoes }, (_, i) => i + 1).map((numero) => {
-            const saved = sessoes.find((s) => s.numero_sessao === numero)
+            const saved = sessoesAtual.find((s) => s.numero_sessao === numero)
             const form = sessaoForm[numero] ?? {}
             const isSaved = !!saved?.data_sessao
-            const isProximaPendente = !isSaved && Array.from({ length: numSessoes }, (_, i) => i + 1).find(n => !sessoes.find(s => s.numero_sessao === n)?.data_sessao) === numero
+            const isProximaPendente = !isSaved && Array.from({ length: numSessoes }, (_, i) => i + 1).find(n => !sessoesAtual.find(s => s.numero_sessao === n)?.data_sessao) === numero
             const expanded = expandedSessoes[numero] ?? !isSaved
 
             if (isSaved && !expanded) {
@@ -521,6 +559,51 @@ export default function Paciente() {
           + Adicionar Sessão {numSessoes + 1}
         </button>
       </div>
+
+      {/* Histórico de pacotes anteriores — arquivado ao iniciar um novo pacote */}
+      {ciclosAnteriores.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <h2 className="font-bold text-gray-800 mb-3">Histórico de Pacotes</h2>
+          <div className="space-y-2">
+            {ciclosAnteriores.map((ciclo) => {
+              const sessoesCiclo = sessoes.filter(s => s.ciclo === ciclo).sort((a, b) => a.numero_sessao - b.numero_sessao)
+              const realizadasCiclo = sessoesCiclo.filter(s => s.data_sessao)
+              const isOpen = expandedCiclos[ciclo] === true
+              const dataInicio = realizadasCiclo[0]?.data_sessao
+              const dataFim = realizadasCiclo[realizadasCiclo.length - 1]?.data_sessao
+              return (
+                <div key={ciclo} className="border border-gray-200 rounded-lg overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedCiclos(c => ({ ...c, [ciclo]: !isOpen }))}
+                    className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+                  >
+                    <span className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                      <span className="text-gray-400 text-xs">{isOpen ? '▾' : '▸'}</span>
+                      Pacote {ciclo}
+                      <span className="text-xs text-gray-400 font-normal">
+                        {realizadasCiclo.length} sessõe{realizadasCiclo.length !== 1 ? 's' : ''} realizada{realizadasCiclo.length !== 1 ? 's' : ''}
+                        {dataInicio && dataFim && ` · ${format(new Date(dataInicio + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })} a ${format(new Date(dataFim + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })}`}
+                      </span>
+                    </span>
+                  </button>
+                  {isOpen && (
+                    <div className="p-4 space-y-2">
+                      {sessoesCiclo.map((s) => (
+                        <div key={s.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600 border-b border-gray-100 pb-2 last:border-0">
+                          <span className="font-semibold text-gray-700">Sessão {s.numero_sessao}</span>
+                          <span>Serviço: <b>{s.servico_realizado ?? '—'}</b></span>
+                          <span>Data: <b>{s.data_sessao ? format(new Date(s.data_sessao + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR }) : '—'}</b></span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
