@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import SignaturePad, { type SignaturePadHandle } from '../components/SignaturePad'
-import type { GiselePatient, GiseleSessao } from '../types'
+import MapaFacial from '../components/MapaFacial'
+import type { GiselePatient, GiseleSessao, AplicacaoFacial } from '../types'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { useIsAdmin } from '../hooks/useIsAdmin'
@@ -13,6 +14,7 @@ export default function Paciente() {
   const { isAdmin } = useIsAdmin()
   const [patient, setPatient] = useState<GiselePatient | null>(null)
   const [sessoes, setSessoes] = useState<GiseleSessao[]>([])
+  const [aplicacoesFaciais, setAplicacoesFaciais] = useState<AplicacaoFacial[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<number | null>(null)
   const [togglingStatus, setTogglingStatus] = useState(false)
@@ -34,12 +36,14 @@ export default function Paciente() {
   const sigRefs = useRef<Record<number, SignaturePadHandle | null>>({})
 
   async function loadData() {
-    const [{ data: p }, { data: s }] = await Promise.all([
+    const [{ data: p }, { data: s }, { data: af }] = await Promise.all([
       supabase.from('gisele_patients').select('*').eq('id', id).single(),
       supabase.from('gisele_sessoes').select('*').eq('patient_id', id).order('numero_sessao'),
+      supabase.from('gisele_aplicacoes_faciais').select('*').eq('patient_id', id).order('data_aplicacao'),
     ])
     setPatient(p)
     setSessoes(s ?? [])
+    setAplicacoesFaciais(af ?? [])
 
     // Só a sessão/formulário do ciclo (pacote) em andamento — pacotes anteriores ficam só no histórico
     const cicloAtualLoad = p?.ciclo_atual ?? 1
@@ -160,6 +164,19 @@ export default function Paciente() {
     setPatient(p => p ? { ...p, ...editForm } : p)
     setEditingPatient(false)
     setSavingEdit(false)
+  }
+
+  async function addAplicacaoFacial(nova: Omit<AplicacaoFacial, 'id' | 'created_at'>) {
+    const { data, error } = await supabase.from('gisele_aplicacoes_faciais').insert(nova).select('*').single()
+    if (!error && data) {
+      setAplicacoesFaciais(prev => [...prev, data as AplicacaoFacial])
+    }
+  }
+
+  async function deleteAplicacaoFacial(aplicacaoId: string) {
+    if (!confirm('Apagar esta aplicação do mapa facial?')) return
+    await supabase.from('gisele_aplicacoes_faciais').delete().eq('id', aplicacaoId)
+    setAplicacoesFaciais(prev => prev.filter(a => a.id !== aplicacaoId))
   }
 
   async function toggleAtivo() {
@@ -420,6 +437,19 @@ export default function Paciente() {
         <p>2. O pacote é intransferível, não podendo ser colocado outra pessoa no lugar.</p>
         <p>3. O pacote deverá ser concluído no prazo de até {patient.prazo_dias ?? '___'} dias, contando da data da 1ª sessão.</p>
         <p>4. Os resultados do tratamento dependem da realização das sessões conforme o protocolo e do cumprimento das orientações de rotina home care.</p>
+      </div>
+
+      {/* Planejador de Injetáveis */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <h2 className="font-bold text-gray-800 mb-1">Planejador de Injetáveis</h2>
+        <p className="text-xs text-gray-400 mb-4">Mapa facial com cada aplicação — produto, quantidade e local — pra saber exatamente o que continuar no próximo retorno.</p>
+        <MapaFacial
+          patientId={patient.id}
+          aplicacoes={aplicacoesFaciais}
+          onAdd={addAplicacaoFacial}
+          onDelete={deleteAplicacaoFacial}
+          canDelete={isAdmin}
+        />
       </div>
 
       {/* Sessões */}

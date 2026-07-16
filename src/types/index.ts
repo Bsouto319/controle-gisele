@@ -28,3 +28,17 @@ export interface GiseleSessao {
   assinatura_cliente: string | null
   created_at: string
 }
+
+export interface AplicacaoFacial {
+  id: string
+  patient_id: string
+  pos_x: number
+  pos_y: number
+  regiao: string | null
+  produto: string
+  quantidade: number
+  unidade: string
+  data_aplicacao: string
+  observacoes: string | null
+  created_at: string
+}
