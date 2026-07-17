@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AplicacaoFacial } from '../types'
-// TODO: import rostoFoto from '../assets/rosto-mapa.png' quando a foto limpa chegar
+import rostoFoto from '../assets/rosto-mapa.png'
 
 const PRODUTOS = [
   { nome: 'Toxina Botulínica', cor: '#3b82f6', unidade: 'u' },
@@ -16,26 +16,26 @@ const DOSES_RAPIDAS = [1, 2, 2.5, 4, 5, 10]
 // ponto, a zona mais próxima do toque vira o "nome" que aparece na lista —
 // assim a lista fica legível (ex: "Glabela") em vez de coordenada crua.
 const ZONAS = [
-  { nome: 'Fronte D', x: 36, y: 33 },
-  { nome: 'Fronte C', x: 50, y: 31 },
-  { nome: 'Fronte E', x: 64, y: 33 },
-  { nome: 'Glabela', x: 50, y: 42 },
-  { nome: 'Pé de galinha D', x: 33, y: 47 },
-  { nome: 'Pé de galinha E', x: 67, y: 47 },
-  { nome: 'Maçã do rosto D', x: 34, y: 58 },
-  { nome: 'Maçã do rosto E', x: 66, y: 58 },
-  { nome: 'Bigode chinês D', x: 40, y: 63 },
-  { nome: 'Bigode chinês E', x: 60, y: 63 },
-  { nome: 'Lábio superior', x: 50, y: 69 },
-  { nome: 'Mandíbula D', x: 30, y: 75 },
-  { nome: 'Mandíbula E', x: 70, y: 75 },
-  { nome: 'Queixo', x: 50, y: 82 },
+  { nome: 'Fronte D', x: 33, y: 26 },
+  { nome: 'Fronte C', x: 50, y: 22 },
+  { nome: 'Fronte E', x: 67, y: 26 },
+  { nome: 'Glabela', x: 50, y: 44 },
+  { nome: 'Pé de galinha D', x: 22, y: 54 },
+  { nome: 'Pé de galinha E', x: 78, y: 54 },
+  { nome: 'Maçã do rosto D', x: 21, y: 63 },
+  { nome: 'Maçã do rosto E', x: 79, y: 63 },
+  { nome: 'Bigode chinês D', x: 34, y: 74 },
+  { nome: 'Bigode chinês E', x: 66, y: 74 },
+  { nome: 'Lábio superior', x: 50, y: 78 },
+  { nome: 'Mandíbula D', x: 18, y: 90 },
+  { nome: 'Mandíbula E', x: 82, y: 90 },
+  { nome: 'Queixo', x: 50, y: 94 },
 ] as const
 
 // Centro aproximado do rosto — as etiquetas de dose saem radialmente pra fora
 // a partir daqui, com uma linha-guia, pra não ficar tudo empilhado no rosto.
 const CENTRO_X = 50
-const CENTRO_Y = 45
+const CENTRO_Y = 55
 
 function infoProduto(produto: string) {
   return PRODUTOS.find(p => p.nome === produto) ?? PRODUTOS[0]
@@ -151,7 +151,7 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
                   key={p.nome}
                   type="button"
                   onClick={() => setProduto(p.nome)}
-                  className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg text-sm transition-colors ${ativo ? 'bg-brand/10 border border-brand/30' : 'border border-transparent hover:bg-gray-50'}`}
+                  className={`w-full flex items-center justify-between gap-2 px-3 py-3 rounded-xl text-sm cursor-pointer transition-colors duration-200 ${ativo ? 'bg-brand/10 border border-brand/30 shadow-[0_2px_10px_-4px_rgba(196,149,106,0.35)]' : 'border border-transparent hover:bg-gray-50'}`}
                 >
                   <span className="flex items-center gap-2 min-w-0">
                     <span className="w-2.5 h-2.5 rounded-full inline-block flex-shrink-0" style={{ background: p.cor }} />
@@ -166,16 +166,16 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
 
         {/* Card de dose — aparece só quando um ponto acabou de ser tocado no rosto */}
         {pontoNovo && (
-          <div className="bg-white rounded-2xl shadow-md border border-brand/30 p-3">
+          <div className="bg-white rounded-2xl shadow-[0_8px_30px_-6px_rgba(15,23,42,0.12)] border border-brand/20 p-3.5">
             <h3 className="text-sm font-bold text-gray-700 mb-0.5">{pontoNovo.zona}</h3>
-            <p className="text-xs text-gray-400 mb-2.5">{produto}</p>
-            <div className="grid grid-cols-3 gap-1.5 mb-2.5">
+            <p className="text-xs text-gray-400 mb-3">{produto}</p>
+            <div className="grid grid-cols-3 gap-2 mb-3">
               {DOSES_RAPIDAS.map(d => (
                 <button
                   key={d}
                   type="button"
                   onClick={() => { setDose(d); setDoseCustom('') }}
-                  className={`py-2.5 rounded-xl text-sm font-bold transition-all ${dose === d ? 'bg-brand text-white' : 'bg-gray-100 text-gray-600 active:bg-gray-200'}`}
+                  className={`min-h-11 py-3 rounded-xl text-sm font-bold cursor-pointer transition-colors duration-200 ${dose === d ? 'bg-brand text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
                 >
                   {d}
                 </button>
@@ -188,17 +188,17 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
               value={doseCustom}
               onChange={e => { setDoseCustom(e.target.value); setDose(null) }}
               placeholder="Outra quantidade..."
-              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm text-center mb-2.5 focus:outline-none focus:ring-1 focus:ring-brand"
+              className="w-full min-h-11 px-3 py-2 border border-gray-200 rounded-xl text-sm text-center mb-3 focus:outline-none focus:ring-2 focus:ring-brand/40 focus:border-brand"
             />
             <div className="flex gap-2">
               <button
                 onClick={salvarPonto}
                 disabled={saving || !quantidadeSelecionada}
-                className="flex-1 bg-brand text-white py-2.5 rounded-xl text-sm font-bold hover:bg-brand-dark transition-colors disabled:opacity-40"
+                className="flex-1 min-h-11 bg-brand text-white py-3 rounded-xl text-sm font-bold hover:bg-brand-dark transition-colors duration-200 disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
               >
                 {saving ? '...' : '✓ Salvar'}
               </button>
-              <button onClick={() => setPontoNovo(null)} className="px-4 py-2.5 rounded-xl text-sm border border-gray-200 text-gray-500">
+              <button onClick={() => setPontoNovo(null)} className="min-h-11 min-w-11 px-4 py-3 rounded-xl text-sm border border-gray-200 text-gray-500 hover:bg-gray-50 cursor-pointer transition-colors duration-200">
                 ✕
               </button>
             </div>
@@ -215,19 +215,20 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
                 <div
                   key={a.id}
                   onClick={() => { setPontoNovo(null); setSelecionado(s => s === a.id ? null : a.id) }}
-                  className={`flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm cursor-pointer transition-colors ${selecionado === a.id ? 'bg-brand/10' : 'hover:bg-gray-50'}`}
+                  className={`flex items-center justify-between gap-2 pl-3 pr-1.5 py-1.5 rounded-xl text-sm cursor-pointer transition-colors duration-200 ${selecionado === a.id ? 'bg-brand/10' : 'hover:bg-gray-50'}`}
                 >
                   <span className="flex items-center gap-2 min-w-0">
                     <span className="w-2.5 h-2.5 rounded-full inline-block flex-shrink-0" style={{ background: infoProduto(a.produto).cor }} />
                     <span className="truncate text-gray-700">{a.regiao ?? a.produto}</span>
                   </span>
-                  <span className="flex items-center gap-2 flex-shrink-0">
+                  <span className="flex items-center gap-1 flex-shrink-0">
                     <span className="font-bold text-gray-700">{a.quantidade}{a.unidade}</span>
                     {canDelete && (
                       <button
                         type="button"
+                        aria-label="Apagar aplicação"
                         onClick={(e) => { e.stopPropagation(); onDelete(a.id); if (selecionado === a.id) setSelecionado(null) }}
-                        className="text-gray-300 hover:text-red-500 transition-colors px-1"
+                        className="w-8 h-8 flex items-center justify-center rounded-full text-gray-300 hover:text-red-500 hover:bg-red-50 cursor-pointer transition-colors duration-200"
                       >
                         ✕
                       </button>
@@ -245,40 +246,15 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
         <div
           ref={containerRef}
           onClick={handleFaceClick}
-          className="relative bg-[#fbf7f3] rounded-xl border border-gray-200 overflow-hidden select-none cursor-crosshair touch-manipulation mx-auto"
-          style={{ aspectRatio: '4/5', maxWidth: 560 }}
+          className="relative bg-[#fbf7f3] rounded-xl border border-gray-200 overflow-hidden select-none cursor-crosshair touch-manipulation mx-auto shadow-[0_8px_30px_-8px_rgba(15,23,42,0.15)]"
+          style={{ aspectRatio: '605/878', maxWidth: 480 }}
         >
-          {/* TODO: trocar por <img src={rostoFoto} className="absolute inset-0 w-full h-full object-cover" /> quando tivermos a foto limpa */}
-          <svg viewBox="0 0 200 240" className="w-full h-full pointer-events-none" preserveAspectRatio="xMidYMid meet">
-            {/* Cabelo: massa sólida, sem contorno próprio */}
-            <path
-              d="M100,26 C78,26 62,40 57,62 C55,70 55,78 57,86 C70,74 86,68 100,68 C114,68 130,74 143,86 C145,78 145,70 143,62 C138,40 122,26 100,26 Z"
-              fill="#ddccb6" opacity="0.55"
-            />
-            <g fill="none" stroke="#a8907a" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              {/* Pescoço e ombros */}
-              <path d="M 84 198 L 78 236 M 116 198 L 122 236" strokeWidth="1.8" />
-              <path d="M 44 236 Q 62 214 78 202 M 156 236 Q 138 214 122 202" strokeWidth="1.8" />
-              {/* Orelhas */}
-              <path d="M 60 122 Q 49 121 48 133 Q 47 145 58 149" strokeWidth="1.8" />
-              <path d="M 140 122 Q 151 121 152 133 Q 153 145 142 149" strokeWidth="1.8" />
-              {/* Contorno do rosto */}
-              <path
-                d="M100,30 C80,30 66,45 62,68 C59,86 59,102 62,118 C55,138 56,158 65,174 C75,190 87,200 100,201 C113,200 125,190 135,174 C144,158 145,138 138,118 C141,102 141,86 138,68 C134,45 120,30 100,30 Z"
-                fill="#fbf7f3" strokeWidth="2.4"
-              />
-              {/* Sobrancelhas */}
-              <path d="M 74 98 Q 85 92 95 97" strokeWidth="2.2" />
-              <path d="M 105 97 Q 115 92 126 98" strokeWidth="2.2" />
-              {/* Olhos, neutros */}
-              <path d="M 76 112 Q 84 115 92 112" strokeWidth="2" />
-              <path d="M 108 112 Q 116 115 124 112" strokeWidth="2" />
-              {/* Nariz, sutil */}
-              <path d="M 98 116 Q 95 132 92 140 Q 96 143 100 141" strokeWidth="1.6" opacity="0.85" />
-              {/* Boca */}
-              <path d="M 87 168 Q 100 174 113 168" strokeWidth="2.2" />
-            </g>
-          </svg>
+          <img
+            src={rostoFoto}
+            alt="Mapa facial para marcação de aplicações"
+            className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+            draggable={false}
+          />
 
           {/* Marcadores das aplicações já salvas: ponto + linha-guia + etiqueta com a dose */}
           {aplicacoes.map((a) => {
