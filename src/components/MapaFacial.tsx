@@ -1,26 +1,56 @@
 import { useEffect, useRef, useState } from 'react'
-import { format } from 'date-fns'
-import { ptBR } from 'date-fns/locale'
 import type { AplicacaoFacial } from '../types'
+// TODO: import rostoFoto from '../assets/rosto-mapa.png' quando a foto limpa chegar
 
 const PRODUTOS = [
-  { nome: 'Botox', cor: '#3b82f6' },
-  { nome: 'Preenchimento', cor: '#ec4899' },
-  { nome: 'Bioestimulador', cor: '#8b5cf6' },
-  { nome: 'Fios', cor: '#f59e0b' },
-  { nome: 'Outro', cor: '#6b7280' },
+  { nome: 'Toxina Botulínica', cor: '#3b82f6', unidade: 'u' },
+  { nome: 'Preenchimento', cor: '#e0546b', unidade: 'ml' },
+  { nome: 'Bioestimulador de Colágeno', cor: '#8b5cf6', unidade: 'ml' },
+  { nome: 'Biorremodelador', cor: '#d4a418', unidade: 'ml' },
+  { nome: 'Skinbooster', cor: '#22a06b', unidade: 'ml' },
 ] as const
 
 const DOSES_RAPIDAS = [1, 2, 2.5, 4, 5, 10]
 
-// Centro aproximado do rosto (mesmas coordenadas percentuais do mapa) — as
-// etiquetas de dose saem radialmente pra fora a partir daqui, com uma linha-guia,
-// pra não ficar tudo empilhado em cima do rosto.
+// Zonas de aplicação nomeadas (coordenadas percentuais no mapa). Ao salvar um
+// ponto, a zona mais próxima do toque vira o "nome" que aparece na lista —
+// assim a lista fica legível (ex: "Glabela") em vez de coordenada crua.
+const ZONAS = [
+  { nome: 'Fronte D', x: 36, y: 33 },
+  { nome: 'Fronte C', x: 50, y: 31 },
+  { nome: 'Fronte E', x: 64, y: 33 },
+  { nome: 'Glabela', x: 50, y: 42 },
+  { nome: 'Pé de galinha D', x: 33, y: 47 },
+  { nome: 'Pé de galinha E', x: 67, y: 47 },
+  { nome: 'Maçã do rosto D', x: 34, y: 58 },
+  { nome: 'Maçã do rosto E', x: 66, y: 58 },
+  { nome: 'Bigode chinês D', x: 40, y: 63 },
+  { nome: 'Bigode chinês E', x: 60, y: 63 },
+  { nome: 'Lábio superior', x: 50, y: 69 },
+  { nome: 'Mandíbula D', x: 30, y: 75 },
+  { nome: 'Mandíbula E', x: 70, y: 75 },
+  { nome: 'Queixo', x: 50, y: 82 },
+] as const
+
+// Centro aproximado do rosto — as etiquetas de dose saem radialmente pra fora
+// a partir daqui, com uma linha-guia, pra não ficar tudo empilhado no rosto.
 const CENTRO_X = 50
 const CENTRO_Y = 45
 
-function corProduto(produto: string) {
-  return PRODUTOS.find(p => p.nome === produto)?.cor ?? '#6b7280'
+function infoProduto(produto: string) {
+  return PRODUTOS.find(p => p.nome === produto) ?? PRODUTOS[0]
+}
+
+function zonaMaisProxima(px: number, py: number, w: number, h: number): string {
+  let melhor: string = ZONAS[0].nome
+  let menorDist = Infinity
+  for (const z of ZONAS) {
+    const dx = (px - z.x) / 100 * w
+    const dy = (py - z.y) / 100 * h
+    const d = dx * dx + dy * dy
+    if (d < menorDist) { menorDist = d; melhor = z.nome }
+  }
+  return melhor
 }
 
 function geometriaEtiqueta(px: number, py: number, w: number, h: number) {
@@ -43,18 +73,16 @@ interface Props {
   canDelete: boolean
 }
 
-interface PontoNovo { x: number; y: number }
+interface PontoNovo { x: number; y: number; zona: string }
 
 export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, canDelete }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 320, h: 400 })
   const [pontoNovo, setPontoNovo] = useState<PontoNovo | null>(null)
   const [selecionado, setSelecionado] = useState<string | null>(null)
-  const [produto, setProduto] = useState<string>('Botox')
+  const [produto, setProduto] = useState<string>(PRODUTOS[0].nome)
   const [dose, setDose] = useState<number | null>(null)
   const [doseCustom, setDoseCustom] = useState('')
-  const [mostrarNota, setMostrarNota] = useState(false)
-  const [nota, setNota] = useState('')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -76,9 +104,11 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
     setSelecionado(null)
     setDose(null)
     setDoseCustom('')
-    setMostrarNota(false)
-    setNota('')
-    setPontoNovo({ x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 })
+    setPontoNovo({
+      x: Math.round(x * 10) / 10,
+      y: Math.round(y * 10) / 10,
+      zona: zonaMaisProxima(x, y, size.w, size.h),
+    })
   }
 
   async function salvarPonto() {
@@ -89,34 +119,136 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
       patient_id: patientId,
       pos_x: pontoNovo.x,
       pos_y: pontoNovo.y,
-      regiao: null,
+      regiao: pontoNovo.zona,
       produto,
       quantidade,
-      unidade: produto === 'Preenchimento' ? 'ml' : 'UI',
+      unidade: infoProduto(produto).unidade,
       data_aplicacao: new Date().toISOString().split('T')[0],
-      observacoes: nota || null,
+      observacoes: null,
     })
     setSaving(false)
     setPontoNovo(null)
-    // Mostra a aplicação recem-salva no painel na hora — se foi engano, o botão
-    // "Apagar" já aparece ali, sem precisar caçar o ponto certo no rosto.
+    // Mostra a aplicação recem-salva na hora — se foi engano, o botão "Apagar"
+    // já aparece ali, sem precisar caçar o ponto certo no rosto.
     if (novoId) setSelecionado(novoId)
   }
 
-  const historico = [...aplicacoes].sort((a, b) => (a.data_aplicacao < b.data_aplicacao ? 1 : -1))
   const quantidadeSelecionada = dose ?? (doseCustom ? Number(doseCustom) : null)
-  const selecionadaObj = selecionado ? aplicacoes.find(x => x.id === selecionado) ?? null : null
+  const pontos = [...aplicacoes].sort((a, b) => (a.regiao ?? '').localeCompare(b.regiao ?? ''))
 
   return (
     <div className="flex flex-col lg:flex-row gap-4">
+      {/* Painel lateral — lista de produtos + pontos aplicados, sempre visível */}
+      <div className="w-full lg:w-64 flex-shrink-0 space-y-4 order-2 lg:order-1">
+        <div>
+          <h3 className="text-xs font-bold tracking-wide text-gray-400 mb-2">INJETÁVEIS</h3>
+          <div className="space-y-1">
+            {PRODUTOS.map(p => {
+              const total = aplicacoes.filter(a => a.produto === p.nome).reduce((acc, a) => acc + Number(a.quantidade), 0)
+              const ativo = produto === p.nome
+              return (
+                <button
+                  key={p.nome}
+                  type="button"
+                  onClick={() => setProduto(p.nome)}
+                  className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg text-sm transition-colors ${ativo ? 'bg-brand/10 border border-brand/30' : 'border border-transparent hover:bg-gray-50'}`}
+                >
+                  <span className="flex items-center gap-2 min-w-0">
+                    <span className="w-2.5 h-2.5 rounded-full inline-block flex-shrink-0" style={{ background: p.cor }} />
+                    <span className={`truncate ${ativo ? 'font-bold text-gray-800' : 'text-gray-600'}`}>{p.nome}</span>
+                  </span>
+                  <span className="text-xs text-gray-400 flex-shrink-0">{total > 0 ? `${total}${p.unidade}` : '—'}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Card de dose — aparece só quando um ponto acabou de ser tocado no rosto */}
+        {pontoNovo && (
+          <div className="bg-white rounded-2xl shadow-md border border-brand/30 p-3">
+            <h3 className="text-sm font-bold text-gray-700 mb-0.5">{pontoNovo.zona}</h3>
+            <p className="text-xs text-gray-400 mb-2.5">{produto}</p>
+            <div className="grid grid-cols-3 gap-1.5 mb-2.5">
+              {DOSES_RAPIDAS.map(d => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => { setDose(d); setDoseCustom('') }}
+                  className={`py-2.5 rounded-xl text-sm font-bold transition-all ${dose === d ? 'bg-brand text-white' : 'bg-gray-100 text-gray-600 active:bg-gray-200'}`}
+                >
+                  {d}
+                </button>
+              ))}
+            </div>
+            <input
+              type="number"
+              inputMode="decimal"
+              step="0.1"
+              value={doseCustom}
+              onChange={e => { setDoseCustom(e.target.value); setDose(null) }}
+              placeholder="Outra quantidade..."
+              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm text-center mb-2.5 focus:outline-none focus:ring-1 focus:ring-brand"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={salvarPonto}
+                disabled={saving || !quantidadeSelecionada}
+                className="flex-1 bg-brand text-white py-2.5 rounded-xl text-sm font-bold hover:bg-brand-dark transition-colors disabled:opacity-40"
+              >
+                {saving ? '...' : '✓ Salvar'}
+              </button>
+              <button onClick={() => setPontoNovo(null)} className="px-4 py-2.5 rounded-xl text-sm border border-gray-200 text-gray-500">
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div>
+          <h3 className="text-xs font-bold tracking-wide text-gray-400 mb-2">PONTOS APLICADOS</h3>
+          {pontos.length === 0 ? (
+            <p className="text-sm text-gray-400">Nenhuma aplicação registrada ainda.</p>
+          ) : (
+            <div className="space-y-1 max-h-[420px] overflow-y-auto pr-1">
+              {pontos.map(a => (
+                <div
+                  key={a.id}
+                  onClick={() => { setPontoNovo(null); setSelecionado(s => s === a.id ? null : a.id) }}
+                  className={`flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm cursor-pointer transition-colors ${selecionado === a.id ? 'bg-brand/10' : 'hover:bg-gray-50'}`}
+                >
+                  <span className="flex items-center gap-2 min-w-0">
+                    <span className="w-2.5 h-2.5 rounded-full inline-block flex-shrink-0" style={{ background: infoProduto(a.produto).cor }} />
+                    <span className="truncate text-gray-700">{a.regiao ?? a.produto}</span>
+                  </span>
+                  <span className="flex items-center gap-2 flex-shrink-0">
+                    <span className="font-bold text-gray-700">{a.quantidade}{a.unidade}</span>
+                    {canDelete && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onDelete(a.id); if (selecionado === a.id) setSelecionado(null) }}
+                        className="text-gray-300 hover:text-red-500 transition-colors px-1"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Rosto — ocupa o máximo de espaço possível */}
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 order-1 lg:order-2">
         <div
           ref={containerRef}
           onClick={handleFaceClick}
           className="relative bg-[#fbf7f3] rounded-xl border border-gray-200 overflow-hidden select-none cursor-crosshair touch-manipulation mx-auto"
-          style={{ aspectRatio: '4/5', maxWidth: 520 }}
+          style={{ aspectRatio: '4/5', maxWidth: 560 }}
         >
+          {/* TODO: trocar por <img src={rostoFoto} className="absolute inset-0 w-full h-full object-cover" /> quando tivermos a foto limpa */}
           <svg viewBox="0 0 200 240" className="w-full h-full pointer-events-none" preserveAspectRatio="xMidYMid meet">
             {/* Cabelo: massa sólida, sem contorno próprio */}
             <path
@@ -148,31 +280,28 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
             </g>
           </svg>
 
-          {/* Marcadores das aplicações já salvas: ponto + linha-guia + etiqueta com a dose (estilo mapa clínico) */}
+          {/* Marcadores das aplicações já salvas: ponto + linha-guia + etiqueta com a dose */}
           {aplicacoes.map((a) => {
             const { lx, ly, angulo, linha } = geometriaEtiqueta(a.pos_x, a.pos_y, size.w, size.h)
             const ativo = selecionado === a.id
+            const cor = infoProduto(a.produto).cor
             return (
               <div key={a.id}>
                 <div
                   className="absolute h-px origin-left pointer-events-none"
-                  style={{
-                    left: `${a.pos_x}%`, top: `${a.pos_y}%`,
-                    width: linha, background: '#b9a48f',
-                    transform: `rotate(${angulo}deg)`,
-                  }}
+                  style={{ left: `${a.pos_x}%`, top: `${a.pos_y}%`, width: linha, background: '#b9a48f', transform: `rotate(${angulo}deg)` }}
                 />
                 <span
                   className="absolute -translate-x-1/2 -translate-y-1/2 block rounded-full border-2 border-white shadow-sm pointer-events-none"
-                  style={{ left: `${a.pos_x}%`, top: `${a.pos_y}%`, width: ativo ? 12 : 8, height: ativo ? 12 : 8, background: corProduto(a.produto) }}
+                  style={{ left: `${a.pos_x}%`, top: `${a.pos_y}%`, width: ativo ? 12 : 8, height: ativo ? 12 : 8, background: cor }}
                 />
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); setPontoNovo(null); setSelecionado(s => s === a.id ? null : a.id) }}
                   className="absolute -translate-x-1/2 -translate-y-1/2 text-[10px] font-bold px-1.5 py-0.5 rounded-md text-white shadow-sm whitespace-nowrap transition-transform active:scale-90"
-                  style={{ left: `${lx}%`, top: `${ly}%`, background: corProduto(a.produto) }}
+                  style={{ left: `${lx}%`, top: `${ly}%`, background: cor }}
                 >
-                  {a.quantidade}{a.unidade === 'ml' ? 'ml' : ''}
+                  {a.quantidade}{a.unidade}
                 </button>
               </div>
             )
@@ -182,123 +311,13 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
           {pontoNovo && (
             <span
               className="absolute -translate-x-1/2 -translate-y-1/2 block w-5 h-5 rounded-full border-2 border-white shadow-md animate-pulse pointer-events-none"
-              style={{ left: `${pontoNovo.x}%`, top: `${pontoNovo.y}%`, background: corProduto(produto) }}
+              style={{ left: `${pontoNovo.x}%`, top: `${pontoNovo.y}%`, background: infoProduto(produto).cor }}
             />
           )}
         </div>
-        <p className="text-xs text-gray-400 mt-2 text-center">Toque no rosto pra marcar uma aplicação · toque numa etiqueta pra ver os detalhes</p>
-      </div>
-
-      {/* Painel fixo do lado — nunca sobrepõe nem corta, sempre visível */}
-      <div className="w-full lg:w-72 flex-shrink-0">
-        {pontoNovo ? (
-          <div className="bg-white rounded-2xl shadow-md border border-gray-200 p-3 sticky top-4">
-            <h3 className="text-sm font-bold text-gray-700 mb-2.5">Nova aplicação</h3>
-            <div className="flex flex-wrap gap-1.5 mb-2.5">
-              {PRODUTOS.map(p => (
-                <button
-                  key={p.nome}
-                  type="button"
-                  onClick={() => setProduto(p.nome)}
-                  className="px-2.5 py-2 rounded-xl text-xs font-semibold transition-all"
-                  style={{ background: produto === p.nome ? p.cor : '#f3f4f6', color: produto === p.nome ? '#fff' : '#6b7280' }}
-                >
-                  {p.nome}
-                </button>
-              ))}
-            </div>
-
-            <div className="grid grid-cols-3 gap-1.5 mb-2.5">
-              {DOSES_RAPIDAS.map(d => (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() => { setDose(d); setDoseCustom('') }}
-                  className={`py-2.5 rounded-xl text-sm font-bold transition-all ${dose === d ? 'bg-brand text-white' : 'bg-gray-100 text-gray-600 active:bg-gray-200'}`}
-                >
-                  {d}
-                </button>
-              ))}
-            </div>
-            <input
-              type="number"
-              inputMode="decimal"
-              step="0.1"
-              value={doseCustom}
-              onChange={e => { setDoseCustom(e.target.value); setDose(null) }}
-              placeholder="Outra quantidade..."
-              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm text-center mb-2.5 focus:outline-none focus:ring-1 focus:ring-brand"
-            />
-
-            {mostrarNota ? (
-              <input
-                value={nota}
-                onChange={e => setNota(e.target.value)}
-                placeholder="Nota (opcional)"
-                autoFocus
-                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs mb-2.5 focus:outline-none focus:ring-1 focus:ring-brand"
-              />
-            ) : (
-              <button type="button" onClick={() => setMostrarNota(true)} className="text-xs text-gray-400 mb-2.5 block">
-                + adicionar nota
-              </button>
-            )}
-
-            <div className="flex gap-2">
-              <button
-                onClick={salvarPonto}
-                disabled={saving || !quantidadeSelecionada}
-                className="flex-1 bg-brand text-white py-2.5 rounded-xl text-sm font-bold hover:bg-brand-dark transition-colors disabled:opacity-40"
-              >
-                {saving ? '...' : '✓ Salvar'}
-              </button>
-              <button onClick={() => setPontoNovo(null)} className="px-4 py-2.5 rounded-xl text-sm border border-gray-200 text-gray-500">
-                ✕
-              </button>
-            </div>
-          </div>
-        ) : selecionadaObj ? (
-          <div className="bg-white border border-gray-200 rounded-xl p-4 text-sm space-y-1.5 sticky top-4">
-            <div className="flex items-center justify-between">
-              <span className="font-semibold text-gray-700 flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: corProduto(selecionadaObj.produto) }} />
-                {selecionadaObj.produto} — {selecionadaObj.quantidade} {selecionadaObj.unidade}
-              </span>
-              {canDelete && (
-                <button onClick={() => { onDelete(selecionadaObj.id); setSelecionado(null) }} className="text-xs text-red-500 hover:underline">Apagar</button>
-              )}
-            </div>
-            <p className="text-gray-500 text-xs">{format(new Date(selecionadaObj.data_aplicacao + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })}</p>
-            {selecionadaObj.observacoes && <p className="text-gray-500 text-xs">{selecionadaObj.observacoes}</p>}
-            <button onClick={() => setSelecionado(null)} className="text-xs text-gray-400 hover:underline pt-1">← ver histórico</button>
-          </div>
-        ) : (
-          <div>
-            <h3 className="text-sm font-semibold text-gray-700 mb-2">Histórico de aplicações</h3>
-            {historico.length === 0 ? (
-              <p className="text-sm text-gray-400">Nenhuma aplicação registrada ainda.</p>
-            ) : (
-              <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
-                {historico.map(a => (
-                  <div
-                    key={a.id}
-                    onClick={() => setSelecionado(a.id)}
-                    className="flex items-center justify-between gap-2 border border-gray-200 rounded-lg px-3 py-2 text-xs cursor-pointer transition-colors hover:bg-gray-50"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full inline-block flex-shrink-0" style={{ background: corProduto(a.produto) }} />
-                      <div>
-                        <p className="font-medium text-gray-700">{a.produto} — {a.quantidade} {a.unidade}</p>
-                        {a.observacoes && <p className="text-gray-400">{a.observacoes}</p>}
-                      </div>
-                    </div>
-                    <span className="text-gray-400 flex-shrink-0">{format(new Date(a.data_aplicacao + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+        <p className="text-xs text-gray-400 mt-2 text-center">
+          Produto ativo: <b className="text-gray-600">{produto}</b> — toque no rosto pra marcar uma aplicação
+        </p>
       </div>
     </div>
   )
