@@ -34,6 +34,9 @@ export interface AplicacaoFacial {
   patient_id: string
   pos_x: number
   pos_y: number
+  pos_x2: number | null
+  pos_y2: number | null
+  tipo: 'ponto' | 'risco'
   regiao: string | null
   produto: string
   quantidade: number

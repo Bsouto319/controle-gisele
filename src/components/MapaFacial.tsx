@@ -7,7 +7,7 @@ const PRODUTOS = [
   { nome: 'Preenchimento', cor: '#e0546b', unidade: 'ml' },
   { nome: 'Bioestimulador de Colágeno', cor: '#8b5cf6', unidade: 'ml' },
   { nome: 'Biorremodelador', cor: '#d4a418', unidade: 'ml' },
-  { nome: 'Skinbooster', cor: '#22a06b', unidade: 'ml' },
+  { nome: 'Fios de PDO', cor: '#22a06b', unidade: 'fio' },
 ] as const
 
 const DOSES_RAPIDAS = [1, 2, 2.5, 4, 5, 10]
@@ -73,11 +73,13 @@ interface Props {
   canDelete: boolean
 }
 
-interface PontoNovo { x: number; y: number; zona: string }
+interface PontoNovo { x: number; y: number; x2?: number; y2?: number; zona: string }
 
 export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, canDelete }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 320, h: 400 })
+  const [modo, setModo] = useState<'ponto' | 'risco'>('ponto')
+  const [riscoInicio, setRiscoInicio] = useState<{ x: number; y: number } | null>(null)
   const [pontoNovo, setPontoNovo] = useState<PontoNovo | null>(null)
   const [selecionado, setSelecionado] = useState<string | null>(null)
   const [produto, setProduto] = useState<string>(PRODUTOS[0].nome)
@@ -102,6 +104,28 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
     const x = ((e.clientX - rect.left) / rect.width) * 100
     const y = ((e.clientY - rect.top) / rect.height) * 100
     setSelecionado(null)
+
+    if (modo === 'risco') {
+      if (!riscoInicio) {
+        // Primeiro toque marca o início do risco — espera o segundo toque pra completar.
+        setRiscoInicio({ x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 })
+        return
+      }
+      setDose(null)
+      setDoseCustom('')
+      const meioX = (riscoInicio.x + x) / 2
+      const meioY = (riscoInicio.y + y) / 2
+      setPontoNovo({
+        x: riscoInicio.x,
+        y: riscoInicio.y,
+        x2: Math.round(x * 10) / 10,
+        y2: Math.round(y * 10) / 10,
+        zona: zonaMaisProxima(meioX, meioY, size.w, size.h),
+      })
+      setRiscoInicio(null)
+      return
+    }
+
     setDose(null)
     setDoseCustom('')
     setPontoNovo({
@@ -115,10 +139,14 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
     const quantidade = dose ?? Number(doseCustom)
     if (!pontoNovo || !quantidade) return
     setSaving(true)
+    const ehRisco = pontoNovo.x2 !== undefined && pontoNovo.y2 !== undefined
     const novoId = await onAdd({
       patient_id: patientId,
       pos_x: pontoNovo.x,
       pos_y: pontoNovo.y,
+      pos_x2: ehRisco ? pontoNovo.x2! : null,
+      pos_y2: ehRisco ? pontoNovo.y2! : null,
+      tipo: ehRisco ? 'risco' : 'ponto',
       regiao: pontoNovo.zona,
       produto,
       quantidade,
@@ -164,7 +192,29 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
           </div>
         </div>
 
-        {/* Card de dose — aparece só quando um ponto acabou de ser tocado no rosto */}
+        <div>
+          <h3 className="text-xs font-bold tracking-wide text-gray-400 mb-2">MARCAÇÃO</h3>
+          <div className="flex rounded-xl border border-gray-200 p-1 gap-1">
+            {(['ponto', 'risco'] as const).map(m => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => { setModo(m); setRiscoInicio(null); setPontoNovo(null) }}
+                className={`flex-1 min-h-9 py-2 rounded-lg text-sm font-medium cursor-pointer transition-colors duration-200 ${modo === m ? 'bg-brand text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+              >
+                {m === 'ponto' ? '● Ponto' : '／ Risco'}
+              </button>
+            ))}
+          </div>
+          {modo === 'risco' && riscoInicio && (
+            <div className="mt-2 flex items-center justify-between gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+              <p className="text-xs text-amber-700">Toque no fim do risco pra completar.</p>
+              <button type="button" onClick={() => setRiscoInicio(null)} className="text-xs text-amber-700 underline cursor-pointer flex-shrink-0">Cancelar</button>
+            </div>
+          )}
+        </div>
+
+        {/* Card de dose — aparece só quando um ponto (ou risco) acabou de ser marcado no rosto */}
         {pontoNovo && (
           <div className="bg-white rounded-2xl shadow-[0_8px_30px_-6px_rgba(15,23,42,0.12)] border border-brand/20 p-3.5">
             <h3 className="text-sm font-bold text-gray-700 mb-0.5">{pontoNovo.zona}</h3>
@@ -256,20 +306,32 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
             draggable={false}
           />
 
-          {/* Marcadores das aplicações já salvas: ponto + linha-guia + etiqueta com a dose */}
+          {/* Marcadores das aplicações já salvas: ponto (ou risco) + linha-guia + etiqueta com a dose */}
           {aplicacoes.map((a) => {
-            const { lx, ly, angulo, linha } = geometriaEtiqueta(a.pos_x, a.pos_y, size.w, size.h)
+            const ehRisco = a.tipo === 'risco' && a.pos_x2 != null && a.pos_y2 != null
+            const meioX = ehRisco ? (a.pos_x + a.pos_x2!) / 2 : a.pos_x
+            const meioY = ehRisco ? (a.pos_y + a.pos_y2!) / 2 : a.pos_y
+            const { lx, ly, angulo, linha } = geometriaEtiqueta(meioX, meioY, size.w, size.h)
             const ativo = selecionado === a.id
             const cor = infoProduto(a.produto).cor
             return (
               <div key={a.id}>
+                {ehRisco ? (
+                  <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ overflow: 'visible' }}>
+                    <line
+                      x1={`${a.pos_x}%`} y1={`${a.pos_y}%`} x2={`${a.pos_x2}%`} y2={`${a.pos_y2}%`}
+                      stroke={cor} strokeWidth={ativo ? 3 : 2} strokeLinecap="round"
+                    />
+                  </svg>
+                ) : (
+                  <span
+                    className="absolute -translate-x-1/2 -translate-y-1/2 block rounded-full border-2 border-white shadow-sm pointer-events-none"
+                    style={{ left: `${a.pos_x}%`, top: `${a.pos_y}%`, width: ativo ? 12 : 8, height: ativo ? 12 : 8, background: cor }}
+                  />
+                )}
                 <div
                   className="absolute h-px origin-left pointer-events-none"
-                  style={{ left: `${a.pos_x}%`, top: `${a.pos_y}%`, width: linha, background: '#b9a48f', transform: `rotate(${angulo}deg)` }}
-                />
-                <span
-                  className="absolute -translate-x-1/2 -translate-y-1/2 block rounded-full border-2 border-white shadow-sm pointer-events-none"
-                  style={{ left: `${a.pos_x}%`, top: `${a.pos_y}%`, width: ativo ? 12 : 8, height: ativo ? 12 : 8, background: cor }}
+                  style={{ left: `${meioX}%`, top: `${meioY}%`, width: linha, background: '#b9a48f', transform: `rotate(${angulo}deg)` }}
                 />
                 <button
                   type="button"
@@ -283,8 +345,23 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
             )
           })}
 
-          {/* Ponto sendo posicionado agora */}
-          {pontoNovo && (
+          {/* Início do risco já tocado, aguardando o segundo toque */}
+          {riscoInicio && (
+            <span
+              className="absolute -translate-x-1/2 -translate-y-1/2 block w-4 h-4 rounded-full border-2 border-white shadow-md animate-pulse pointer-events-none"
+              style={{ left: `${riscoInicio.x}%`, top: `${riscoInicio.y}%`, background: infoProduto(produto).cor }}
+            />
+          )}
+
+          {/* Marcação sendo posicionada agora */}
+          {pontoNovo && pontoNovo.x2 !== undefined && pontoNovo.y2 !== undefined ? (
+            <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ overflow: 'visible' }}>
+              <line
+                x1={`${pontoNovo.x}%`} y1={`${pontoNovo.y}%`} x2={`${pontoNovo.x2}%`} y2={`${pontoNovo.y2}%`}
+                stroke={infoProduto(produto).cor} strokeWidth={3} strokeLinecap="round"
+              />
+            </svg>
+          ) : pontoNovo && (
             <span
               className="absolute -translate-x-1/2 -translate-y-1/2 block w-5 h-5 rounded-full border-2 border-white shadow-md animate-pulse pointer-events-none"
               style={{ left: `${pontoNovo.x}%`, top: `${pontoNovo.y}%`, background: infoProduto(produto).cor }}
