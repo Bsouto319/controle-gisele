@@ -16,25 +16,25 @@ const DOSES_RAPIDAS = [1, 2, 2.5, 4, 5, 10]
 // ponto, a zona mais próxima do toque vira o "nome" que aparece na lista —
 // assim a lista fica legível (ex: "Glabela") em vez de coordenada crua.
 const ZONAS = [
-  { nome: 'Fronte D', x: 33, y: 26 },
-  { nome: 'Fronte C', x: 50, y: 22 },
-  { nome: 'Fronte E', x: 67, y: 26 },
-  { nome: 'Glabela', x: 50, y: 44 },
-  { nome: 'Pé de galinha D', x: 22, y: 54 },
-  { nome: 'Pé de galinha E', x: 78, y: 54 },
-  { nome: 'Maçã do rosto D', x: 21, y: 63 },
-  { nome: 'Maçã do rosto E', x: 79, y: 63 },
-  { nome: 'Bigode chinês D', x: 34, y: 74 },
-  { nome: 'Bigode chinês E', x: 66, y: 74 },
-  { nome: 'Lábio superior', x: 50, y: 78 },
-  { nome: 'Mandíbula D', x: 18, y: 90 },
-  { nome: 'Mandíbula E', x: 82, y: 90 },
-  { nome: 'Queixo', x: 50, y: 94 },
+  { nome: 'Fronte D', x: 30.6, y: 26 },
+  { nome: 'Fronte C', x: 48.2, y: 22 },
+  { nome: 'Fronte E', x: 65.8, y: 26 },
+  { nome: 'Glabela', x: 48.2, y: 44 },
+  { nome: 'Pé de galinha D', x: 19.2, y: 54 },
+  { nome: 'Pé de galinha E', x: 77.2, y: 54 },
+  { nome: 'Maçã do rosto D', x: 18.2, y: 63 },
+  { nome: 'Maçã do rosto E', x: 78.2, y: 63 },
+  { nome: 'Bigode chinês D', x: 31.6, y: 74 },
+  { nome: 'Bigode chinês E', x: 64.8, y: 74 },
+  { nome: 'Lábio superior', x: 48.2, y: 78 },
+  { nome: 'Mandíbula D', x: 15.1, y: 90 },
+  { nome: 'Mandíbula E', x: 81.4, y: 90 },
+  { nome: 'Queixo', x: 48.2, y: 94 },
 ] as const
 
 // Centro aproximado do rosto — as etiquetas de dose saem radialmente pra fora
 // a partir daqui, com uma linha-guia, pra não ficar tudo empilhado no rosto.
-const CENTRO_X = 50
+const CENTRO_X = 48.2
 const CENTRO_Y = 55
 
 function infoProduto(produto: string) {
@@ -297,7 +297,7 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
           ref={containerRef}
           onClick={handleFaceClick}
           className="relative bg-[#fbf7f3] rounded-xl border border-gray-200 overflow-hidden select-none cursor-crosshair touch-manipulation mx-auto shadow-[0_8px_30px_-8px_rgba(15,23,42,0.15)]"
-          style={{ aspectRatio: '605/878', maxWidth: 480 }}
+          style={{ aspectRatio: '584/878', maxWidth: 480 }}
         >
           <img
             src={rostoFoto}
