@@ -23,6 +23,7 @@ export interface GiselePatient {
   pacote_travado_em: string | null
   pacote_concluido_notificado_em: string | null
   ciclo_atual: number
+  promocao_brinde: string | null
 }
 
 export interface GiseleSessao {

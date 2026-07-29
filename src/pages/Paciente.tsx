@@ -24,6 +24,8 @@ export default function Paciente() {
   const [numSessoes, setNumSessoes] = useState(10)
   const [expandedSessoes, setExpandedSessoes] = useState<Record<number, boolean>>({})
   const [notificandoConclusao, setNotificandoConclusao] = useState(false)
+  const [promocaoForm, setPromocaoForm] = useState('')
+  const [savingPromocao, setSavingPromocao] = useState(false)
   const [iniciandoPacote, setIniciandoPacote] = useState(false)
   const [expandedCiclos, setExpandedCiclos] = useState<Record<number, boolean>>({})
   const scrolledRef = useRef(false)
@@ -79,6 +81,16 @@ export default function Paciente() {
   }
 
   useEffect(() => { loadData() }, [id])
+
+  useEffect(() => { setPromocaoForm(patient?.promocao_brinde ?? '') }, [patient?.id, patient?.ciclo_atual, patient?.promocao_brinde])
+
+  async function salvarPromocao() {
+    if (!patient) return
+    setSavingPromocao(true)
+    await supabase.from('gisele_patients').update({ promocao_brinde: promocaoForm || null }).eq('id', patient.id)
+    setPatient(p => p ? { ...p, promocao_brinde: promocaoForm || null } : p)
+    setSavingPromocao(false)
+  }
 
   const setField = (numero: number, field: string, value: string) =>
     setSessaoForm((f) => ({ ...f, [numero]: { ...f[numero], [field]: value } }))
@@ -161,8 +173,9 @@ export default function Paciente() {
       ciclo_atual: novoCiclo,
       pacote_travado_em: null,
       pacote_concluido_notificado_em: null,
+      promocao_brinde: null,
     }).eq('id', patient.id)
-    setPatient(p => p ? { ...p, ciclo_atual: novoCiclo, pacote_travado_em: null, pacote_concluido_notificado_em: null } : p)
+    setPatient(p => p ? { ...p, ciclo_atual: novoCiclo, pacote_travado_em: null, pacote_concluido_notificado_em: null, promocao_brinde: null } : p)
     setNumSessoes(patient.quantidade_sessoes ?? 10)
     setSessaoForm({})
     setExpandedSessoes({})
@@ -466,6 +479,19 @@ export default function Paciente() {
                 <span className="text-yellow-700 font-medium">Obs:</span> {patient.observacoes}
               </div>
             )}
+            <div className="mt-3">
+              <label className="text-xs font-medium text-pink-600 block mb-1">🎁 Promoção / Brinde deste pacote</label>
+              <textarea
+                value={promocaoForm}
+                onChange={e => setPromocaoForm(e.target.value)}
+                onBlur={salvarPromocao}
+                placeholder="Ex: brinde de 1 sessão de limpeza de pele ao concluir o pacote..."
+                rows={2}
+                disabled={!isAdmin}
+                className="w-full text-sm px-3 py-2 border border-pink-100 bg-pink-50/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-200 disabled:opacity-60"
+              />
+              {savingPromocao && <p className="text-[11px] text-gray-400 mt-1">Salvando...</p>}
+            </div>
           </>
         )}
       </div>
