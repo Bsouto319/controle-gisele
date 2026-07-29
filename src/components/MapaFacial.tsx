@@ -60,6 +60,7 @@ interface Props {
   onAdd: (novo: Omit<AplicacaoFacial, 'id' | 'created_at'>) => Promise<string | null>
   onDelete: (id: string) => Promise<void>
   onAddProcedimento: (nome: string, cor: string) => Promise<void>
+  onEnviarSessao?: (imagemBase64: string, dataSessao: string) => Promise<void>
   canDelete: boolean
 }
 
@@ -70,7 +71,7 @@ interface PontoPendente {
   produto: string
 }
 
-export default function MapaFacial({ patientId, aplicacoes, procedimentos, onAdd, onDelete, onAddProcedimento, canDelete }: Props) {
+export default function MapaFacial({ patientId, aplicacoes, procedimentos, onAdd, onDelete, onAddProcedimento, onEnviarSessao, canDelete }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 320, h: 400 })
   const [modo, setModo] = useState<'ponto' | 'risco'>('ponto')
@@ -82,6 +83,8 @@ export default function MapaFacial({ patientId, aplicacoes, procedimentos, onAdd
   const [salvandoSessao, setSalvandoSessao] = useState(false)
   const [novoProcNome, setNovoProcNome] = useState('')
   const [savingProc, setSavingProc] = useState(false)
+  const [ultimaSessaoSalva, setUltimaSessaoSalva] = useState<{ data: string; pontos: PontoPendente[] } | null>(null)
+  const [enviandoSessao, setEnviandoSessao] = useState(false)
 
   function infoProduto(nome: string) {
     return procedimentos.find(p => p.nome === nome) ?? procedimentos[0] ?? { nome, cor: '#3b82f6' }
@@ -172,8 +175,63 @@ export default function MapaFacial({ patientId, aplicacoes, procedimentos, onAdd
         observacoes: null,
       })
     }
+    setUltimaSessaoSalva({ data: dataSelecionada, pontos: pendentes })
     setPendentes([])
     setSalvandoSessao(false)
+  }
+
+  function gerarImagemRosto(pontosParaDesenhar: PontoPendente[]): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const W = 584, H = 878
+      const canvas = document.createElement('canvas')
+      canvas.width = W
+      canvas.height = H
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return reject(new Error('canvas indisponível'))
+
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0, W, H)
+        for (const pt of pontosParaDesenhar) {
+          const cor = infoProduto(pt.produto).cor
+          if (pt.x2 !== undefined && pt.y2 !== undefined) {
+            ctx.strokeStyle = cor
+            ctx.lineWidth = 4
+            ctx.lineCap = 'round'
+            ctx.beginPath()
+            ctx.moveTo((pt.x / 100) * W, (pt.y / 100) * H)
+            ctx.lineTo((pt.x2 / 100) * W, (pt.y2 / 100) * H)
+            ctx.stroke()
+          } else {
+            ctx.fillStyle = cor
+            ctx.strokeStyle = '#fff'
+            ctx.lineWidth = 2
+            ctx.beginPath()
+            ctx.arc((pt.x / 100) * W, (pt.y / 100) * H, 7, 0, Math.PI * 2)
+            ctx.fill()
+            ctx.stroke()
+          }
+        }
+        resolve(canvas.toDataURL('image/png'))
+      }
+      img.onerror = () => reject(new Error('falha ao carregar imagem do rosto'))
+      img.src = rostoFoto
+    })
+  }
+
+  async function enviarSessaoAoPaciente() {
+    if (!ultimaSessaoSalva || !onEnviarSessao) return
+    setEnviandoSessao(true)
+    try {
+      const imagemBase64 = await gerarImagemRosto(ultimaSessaoSalva.pontos)
+      await onEnviarSessao(imagemBase64, ultimaSessaoSalva.data)
+      setUltimaSessaoSalva(null)
+    } catch (err) {
+      alert('Erro ao gerar/enviar a imagem: ' + String(err))
+    } finally {
+      setEnviandoSessao(false)
+    }
   }
 
   const pontos = [...aplicacoes].sort((a, b) => {
@@ -277,6 +335,28 @@ export default function MapaFacial({ patientId, aplicacoes, procedimentos, onAdd
             >
               {salvandoSessao ? 'Salvando...' : `💾 Salvar sessão (${pendentes.length})`}
             </button>
+          </div>
+        )}
+
+        {ultimaSessaoSalva && onEnviarSessao && (
+          <div className="bg-green-50 border border-green-200 rounded-2xl p-3.5 space-y-2">
+            <p className="text-sm text-green-800 font-medium">✓ Sessão salva! Enviar o registro pro paciente?</p>
+            <div className="flex gap-2">
+              <button
+                onClick={enviarSessaoAoPaciente}
+                disabled={enviandoSessao}
+                className="flex-1 min-h-10 bg-green-600 text-white rounded-xl text-sm font-bold hover:bg-green-700 transition-colors duration-200 disabled:opacity-40 cursor-pointer"
+              >
+                {enviandoSessao ? 'Enviando...' : '📲 Enviar ao paciente'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setUltimaSessaoSalva(null)}
+                className="px-3 rounded-xl text-sm border border-green-300 text-green-700 hover:bg-green-100 cursor-pointer transition-colors duration-200"
+              >
+                Agora não
+              </button>
+            </div>
           </div>
         )}
 

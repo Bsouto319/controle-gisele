@@ -225,6 +225,29 @@ export default function Paciente() {
     if (!error && data) setProcedimentos(prev => [...prev, data as Procedimento].sort((a, b) => a.nome.localeCompare(b.nome)))
   }
 
+  async function enviarSessaoMapaFacial(imagemBase64: string, dataSessao: string) {
+    if (!patient) return
+    if (!patient.telefone) {
+      alert('Paciente sem telefone cadastrado — não dá pra enviar por WhatsApp.')
+      return
+    }
+    const cicloAtualEnvio = patient.ciclo_atual ?? 1
+    const sessoesDoCiclo = sessoes.filter(s => s.ciclo === cicloAtualEnvio && s.data_sessao)
+    const ultimaSessaoComRetorno = [...sessoesDoCiclo].sort((a, b) => b.numero_sessao - a.numero_sessao)[0]
+    const { error } = await supabase.functions.invoke('send-mapa-facial-sessao', {
+      body: {
+        patient_name: patient.nome,
+        patient_phone: patient.telefone,
+        image_base64: imagemBase64,
+        data_sessao: dataSessao,
+        proximo_retorno: ultimaSessaoComRetorno?.data_retorno ?? null,
+      },
+    })
+    if (error) {
+      alert('Erro ao enviar pro paciente: ' + error.message)
+    }
+  }
+
   async function toggleAtivo() {
     if (!patient) return
     const novoStatus = patient.ativo === false ? true : false
@@ -515,6 +538,7 @@ export default function Paciente() {
           onAdd={addAplicacaoFacial}
           onDelete={deleteAplicacaoFacial}
           onAddProcedimento={addProcedimento}
+          onEnviarSessao={enviarSessaoMapaFacial}
           canDelete
         />
       </div>
