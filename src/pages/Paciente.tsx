@@ -107,6 +107,25 @@ export default function Paciente() {
     const { data: updated } = await supabase.from('gisele_sessoes').select('*').eq('patient_id', id).order('numero_sessao')
     const updatedSessoes = (updated ?? []) as GiseleSessao[]
     setSessoes(updatedSessoes)
+
+    if (sig && !sig.isEmpty() && !existing?.assinatura_cliente && patient && (patient.email || patient.telefone)) {
+      const totalPacote = patient.quantidade_sessoes ?? numSessoes
+      const concluidasNoCiclo = updatedSessoes.filter(s => s.data_sessao && s.ciclo === cicloAtual).length
+      const sessoesRestantes = Math.max(totalPacote - concluidasNoCiclo, 0)
+      supabase.functions.invoke('send-sessao-email', {
+        body: {
+          patient_name: patient.nome,
+          patient_email: patient.email,
+          patient_phone: patient.telefone,
+          numero_sessao: numero,
+          servico_realizado: data.servico_realizado ?? null,
+          data_sessao: data.data_sessao ?? null,
+          data_retorno: data.data_retorno ?? null,
+          sessoes_restantes: sessoesRestantes,
+        },
+      })
+    }
+
     setActiveSig(null)
     setSaving(null)
     setExpandedSessoes(f => ({ ...f, [numero]: false, [numero + 1]: true }))
@@ -128,7 +147,11 @@ export default function Paciente() {
 
   async function iniciarNovoPacote() {
     if (!patient) return
-    if (!confirm(`Arquivar o pacote atual de ${patient.nome} no histórico e iniciar um novo pacote?`)) return
+    const aindaEmAndamento = !!patient.quantidade_sessoes && sessoesAtual.filter(s => s.data_sessao).length < patient.quantidade_sessoes
+    const aviso = aindaEmAndamento
+      ? `O pacote atual de ${patient.nome} ainda não foi concluído. Ele fica arquivado no histórico do jeito que está, e um pacote novo começa do zero. Continuar?`
+      : `Arquivar o pacote atual de ${patient.nome} no histórico e iniciar um novo pacote?`
+    if (!confirm(aviso)) return
     setIniciandoPacote(true)
     const novoCiclo = (patient.ciclo_atual ?? 1) + 1
     await supabase.from('gisele_patients').update({
@@ -258,6 +281,13 @@ export default function Paciente() {
                 ✏️ Editar
               </button>
             )}
+            <button
+              onClick={iniciarNovoPacote}
+              disabled={iniciandoPacote}
+              className="text-xs px-3 py-1.5 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 font-medium transition-colors disabled:opacity-50"
+            >
+              {iniciandoPacote ? 'Iniciando...' : '+ Novo Pacote'}
+            </button>
             <button
               onClick={toggleAtivo}
               disabled={togglingStatus}
@@ -435,10 +465,9 @@ export default function Paciente() {
       {/* Regras do passaporte */}
       <div className="bg-white rounded-xl border border-gray-200 p-6 text-xs text-gray-500 space-y-1.5">
         <h2 className="font-bold text-gray-800 text-sm mb-2">Regras do Passaporte de Tratamento</h2>
-        <p>1. Em caso de não comparecimento no horário agendado, sem aviso prévio mínimo de 24 horas, o serviço constará como feito.</p>
-        <p>2. O pacote é intransferível, não podendo ser colocado outra pessoa no lugar.</p>
-        <p>3. O pacote deverá ser concluído no prazo de até {patient.prazo_dias ?? '___'} dias, contando da data da 1ª sessão.</p>
-        <p>4. Os resultados do tratamento dependem da realização das sessões conforme o protocolo e do cumprimento das orientações de rotina home care.</p>
+        <p>1. O pacote é intransferível, não podendo ser colocado outra pessoa no lugar.</p>
+        <p>2. O pacote deverá ser concluído no prazo de até {patient.prazo_dias ?? '___'} dias, contando da data da 1ª sessão.</p>
+        <p>3. Os resultados do tratamento dependem da realização das sessões conforme o protocolo e do cumprimento das orientações de rotina home care.</p>
       </div>
 
       {/* Planejador de Injetáveis */}

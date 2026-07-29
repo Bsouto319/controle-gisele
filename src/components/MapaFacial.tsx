@@ -86,6 +86,7 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
   const [dose, setDose] = useState<number | null>(null)
   const [doseCustom, setDoseCustom] = useState('')
   const [saving, setSaving] = useState(false)
+  const [dataSelecionada, setDataSelecionada] = useState(new Date().toISOString().split('T')[0])
 
   useEffect(() => {
     const el = containerRef.current
@@ -136,8 +137,8 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
   }
 
   async function salvarPonto() {
-    const quantidade = dose ?? Number(doseCustom)
-    if (!pontoNovo || !quantidade) return
+    const quantidade = dose ?? (doseCustom ? Number(doseCustom) : null)
+    if (!pontoNovo) return
     setSaving(true)
     const ehRisco = pontoNovo.x2 !== undefined && pontoNovo.y2 !== undefined
     const novoId = await onAdd({
@@ -150,8 +151,8 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
       regiao: pontoNovo.zona,
       produto,
       quantidade,
-      unidade: infoProduto(produto).unidade,
-      data_aplicacao: new Date().toISOString().split('T')[0],
+      unidade: quantidade ? infoProduto(produto).unidade : null,
+      data_aplicacao: dataSelecionada,
       observacoes: null,
     })
     setSaving(false)
@@ -161,8 +162,10 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
     if (novoId) setSelecionado(novoId)
   }
 
-  const quantidadeSelecionada = dose ?? (doseCustom ? Number(doseCustom) : null)
-  const pontos = [...aplicacoes].sort((a, b) => (a.regiao ?? '').localeCompare(b.regiao ?? ''))
+  const pontos = [...aplicacoes].sort((a, b) => {
+    if (a.data_aplicacao !== b.data_aplicacao) return b.data_aplicacao.localeCompare(a.data_aplicacao)
+    return (a.regiao ?? '').localeCompare(b.regiao ?? '')
+  })
 
   return (
     <div className="flex flex-col lg:flex-row gap-4">
@@ -214,6 +217,17 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
           )}
         </div>
 
+        <div>
+          <h3 className="text-xs font-bold tracking-wide text-gray-400 mb-2">DATA DA SESSÃO</h3>
+          <input
+            type="date"
+            value={dataSelecionada}
+            onChange={e => setDataSelecionada(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/40 focus:border-brand"
+          />
+          <p className="text-[11px] text-gray-400 mt-1">Novas marcações ficam salvas com essa data.</p>
+        </div>
+
         {/* Card de dose — aparece só quando um ponto (ou risco) acabou de ser marcado no rosto */}
         {pontoNovo && (
           <div className="bg-white rounded-2xl shadow-[0_8px_30px_-6px_rgba(15,23,42,0.12)] border border-brand/20 p-3.5">
@@ -243,10 +257,10 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
             <div className="flex gap-2">
               <button
                 onClick={salvarPonto}
-                disabled={saving || !quantidadeSelecionada}
+                disabled={saving}
                 className="flex-1 min-h-11 bg-brand text-white py-3 rounded-xl text-sm font-bold hover:bg-brand-dark transition-colors duration-200 disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
               >
-                {saving ? '...' : '✓ Salvar'}
+                {saving ? '...' : '✓ Marcar'}
               </button>
               <button onClick={() => setPontoNovo(null)} className="min-h-11 min-w-11 px-4 py-3 rounded-xl text-sm border border-gray-200 text-gray-500 hover:bg-gray-50 cursor-pointer transition-colors duration-200">
                 ✕
@@ -261,9 +275,14 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
             <p className="text-sm text-gray-400">Nenhuma aplicação registrada ainda.</p>
           ) : (
             <div className="space-y-1 max-h-[420px] overflow-y-auto pr-1">
-              {pontos.map(a => (
+              {pontos.map((a, i) => (
+                <div key={a.id}>
+                {(i === 0 || pontos[i - 1].data_aplicacao !== a.data_aplicacao) && (
+                  <p className="text-[11px] font-semibold text-gray-400 mt-2 mb-1 px-1">
+                    {new Date(a.data_aplicacao + 'T12:00:00').toLocaleDateString('pt-BR')}
+                  </p>
+                )}
                 <div
-                  key={a.id}
                   onClick={() => { setPontoNovo(null); setSelecionado(s => s === a.id ? null : a.id) }}
                   className={`flex items-center justify-between gap-2 pl-3 pr-1.5 py-1.5 rounded-xl text-sm cursor-pointer transition-colors duration-200 ${selecionado === a.id ? 'bg-brand/10' : 'hover:bg-gray-50'}`}
                 >
@@ -272,7 +291,7 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
                     <span className="truncate text-gray-700">{a.regiao ?? a.produto}</span>
                   </span>
                   <span className="flex items-center gap-1 flex-shrink-0">
-                    <span className="font-bold text-gray-700">{a.quantidade}{a.unidade}</span>
+                    <span className="font-bold text-gray-700">{a.quantidade ? `${a.quantidade}${a.unidade ?? ''}` : '●'}</span>
                     {canDelete && (
                       <button
                         type="button"
@@ -284,6 +303,7 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
                       </button>
                     )}
                   </span>
+                </div>
                 </div>
               ))}
             </div>
@@ -339,7 +359,7 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
                   className="absolute -translate-x-1/2 -translate-y-1/2 text-[10px] font-bold px-1.5 py-0.5 rounded-md text-white shadow-sm whitespace-nowrap transition-transform active:scale-90"
                   style={{ left: `${lx}%`, top: `${ly}%`, background: cor }}
                 >
-                  {a.quantidade}{a.unidade}
+                  {a.quantidade ? `${a.quantidade}${a.unidade ?? ''}` : a.regiao ?? a.produto}
                 </button>
               </div>
             )

@@ -39,8 +39,8 @@ export interface AplicacaoFacial {
   tipo: 'ponto' | 'risco'
   regiao: string | null
   produto: string
-  quantidade: number
-  unidade: string
+  quantidade: number | null
+  unidade: string | null
   data_aplicacao: string
   observacoes: string | null
   created_at: string
