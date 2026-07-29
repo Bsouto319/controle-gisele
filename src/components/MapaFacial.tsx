@@ -1,14 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AplicacaoFacial } from '../types'
+import type { AplicacaoFacial, Procedimento } from '../types'
 import rostoFoto from '../assets/rosto-mapa.png'
 
-const PRODUTOS = [
-  { nome: 'Toxina Botulínica', cor: '#3b82f6' },
-  { nome: 'Preenchimento', cor: '#e0546b' },
-  { nome: 'Bioestimulador de Colágeno', cor: '#8b5cf6' },
-  { nome: 'Biorremodelador', cor: '#d4a418' },
-  { nome: 'Fios de PDO', cor: '#22a06b' },
-] as const
+const CORES_NOVO_PROCEDIMENTO = ['#3b82f6', '#e0546b', '#8b5cf6', '#d4a418', '#22a06b', '#0891b2', '#ea580c', '#65a30d']
 
 // Zonas de aplicação nomeadas (coordenadas percentuais no mapa). Ao marcar um
 // ponto, a zona mais próxima do toque vira o "nome" que aparece na lista —
@@ -34,10 +28,6 @@ const ZONAS = [
 // a partir daqui, com uma linha-guia, pra não ficar tudo empilhado no rosto.
 const CENTRO_X = 48.2
 const CENTRO_Y = 55
-
-function infoProduto(produto: string) {
-  return PRODUTOS.find(p => p.nome === produto) ?? PRODUTOS[0]
-}
 
 function zonaMaisProxima(px: number, py: number, w: number, h: number): string {
   let melhor: string = ZONAS[0].nome
@@ -66,8 +56,10 @@ function geometriaEtiqueta(px: number, py: number, w: number, h: number) {
 interface Props {
   patientId: string
   aplicacoes: AplicacaoFacial[]
+  procedimentos: Procedimento[]
   onAdd: (novo: Omit<AplicacaoFacial, 'id' | 'created_at'>) => Promise<string | null>
   onDelete: (id: string) => Promise<void>
+  onAddProcedimento: (nome: string, cor: string) => Promise<void>
   canDelete: boolean
 }
 
@@ -78,16 +70,35 @@ interface PontoPendente {
   produto: string
 }
 
-export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, canDelete }: Props) {
+export default function MapaFacial({ patientId, aplicacoes, procedimentos, onAdd, onDelete, onAddProcedimento, canDelete }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 320, h: 400 })
   const [modo, setModo] = useState<'ponto' | 'risco'>('ponto')
   const [riscoInicio, setRiscoInicio] = useState<{ x: number; y: number } | null>(null)
   const [selecionado, setSelecionado] = useState<string | null>(null)
-  const [produto, setProduto] = useState<string>(PRODUTOS[0].nome)
+  const [produto, setProduto] = useState<string>('')
   const [dataSelecionada, setDataSelecionada] = useState(new Date().toISOString().split('T')[0])
   const [pendentes, setPendentes] = useState<PontoPendente[]>([])
   const [salvandoSessao, setSalvandoSessao] = useState(false)
+  const [novoProcNome, setNovoProcNome] = useState('')
+  const [savingProc, setSavingProc] = useState(false)
+
+  function infoProduto(nome: string) {
+    return procedimentos.find(p => p.nome === nome) ?? procedimentos[0] ?? { nome, cor: '#3b82f6' }
+  }
+
+  useEffect(() => {
+    if (!produto && procedimentos.length > 0) setProduto(procedimentos[0].nome)
+  }, [procedimentos, produto])
+
+  async function salvarNovoProcedimento() {
+    if (!novoProcNome.trim()) return
+    setSavingProc(true)
+    const cor = CORES_NOVO_PROCEDIMENTO[procedimentos.length % CORES_NOVO_PROCEDIMENTO.length]
+    await onAddProcedimento(novoProcNome.trim(), cor)
+    setNovoProcNome('')
+    setSavingProc(false)
+  }
 
   useEffect(() => {
     const el = containerRef.current
@@ -175,13 +186,13 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
       {/* Painel lateral — lista de produtos + pontos aplicados, sempre visível */}
       <div className="w-full lg:w-64 flex-shrink-0 space-y-4 order-2 lg:order-1">
         <div>
-          <h3 className="text-xs font-bold tracking-wide text-gray-400 mb-2">MEDICAÇÃO / PRODUTO ATIVO</h3>
+          <h3 className="text-xs font-bold tracking-wide text-gray-400 mb-2">PROCEDIMENTO ATIVO</h3>
           <div className="space-y-1">
-            {PRODUTOS.map(p => {
+            {procedimentos.map(p => {
               const ativo = produto === p.nome
               return (
                 <button
-                  key={p.nome}
+                  key={p.id}
                   type="button"
                   onClick={() => setProduto(p.nome)}
                   className={`w-full flex items-center gap-2 px-3 py-3 rounded-xl text-sm cursor-pointer transition-colors duration-200 ${ativo ? 'bg-brand/10 border border-brand/30 shadow-[0_2px_10px_-4px_rgba(196,149,106,0.35)]' : 'border border-transparent hover:bg-gray-50'}`}
@@ -191,6 +202,24 @@ export default function MapaFacial({ patientId, aplicacoes, onAdd, onDelete, can
                 </button>
               )
             })}
+          </div>
+          <div className="flex gap-1.5 mt-2">
+            <input
+              type="text"
+              placeholder="+ Novo procedimento..."
+              value={novoProcNome}
+              onChange={e => setNovoProcNome(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') salvarNovoProcedimento() }}
+              className="flex-1 min-w-0 px-2.5 py-2 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-brand"
+            />
+            <button
+              type="button"
+              onClick={salvarNovoProcedimento}
+              disabled={savingProc || !novoProcNome.trim()}
+              className="px-2.5 py-2 rounded-lg text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 disabled:opacity-40 cursor-pointer transition-colors duration-200"
+            >
+              {savingProc ? '...' : '+'}
+            </button>
           </div>
         </div>
 

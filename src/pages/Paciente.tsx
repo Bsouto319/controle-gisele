@@ -3,7 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import SignaturePad, { type SignaturePadHandle } from '../components/SignaturePad'
 import MapaFacial from '../components/MapaFacial'
-import type { GiselePatient, GiseleSessao, AplicacaoFacial } from '../types'
+import type { GiselePatient, GiseleSessao, AplicacaoFacial, Procedimento } from '../types'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { useIsAdmin } from '../hooks/useIsAdmin'
@@ -15,6 +15,7 @@ export default function Paciente() {
   const [patient, setPatient] = useState<GiselePatient | null>(null)
   const [sessoes, setSessoes] = useState<GiseleSessao[]>([])
   const [aplicacoesFaciais, setAplicacoesFaciais] = useState<AplicacaoFacial[]>([])
+  const [procedimentos, setProcedimentos] = useState<Procedimento[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<number | null>(null)
   const [togglingStatus, setTogglingStatus] = useState(false)
@@ -36,14 +37,16 @@ export default function Paciente() {
   const sigRefs = useRef<Record<number, SignaturePadHandle | null>>({})
 
   async function loadData() {
-    const [{ data: p }, { data: s }, { data: af }] = await Promise.all([
+    const [{ data: p }, { data: s }, { data: af }, { data: proc }] = await Promise.all([
       supabase.from('gisele_patients').select('*').eq('id', id).single(),
       supabase.from('gisele_sessoes').select('*').eq('patient_id', id).order('numero_sessao'),
       supabase.from('gisele_aplicacoes_faciais').select('*').eq('patient_id', id).order('data_aplicacao'),
+      supabase.from('gisele_procedimentos').select('*').eq('ativo', true).order('nome'),
     ])
     setPatient(p)
     setSessoes(s ?? [])
     setAplicacoesFaciais(af ?? [])
+    setProcedimentos(proc ?? [])
 
     // Só a sessão/formulário do ciclo (pacote) em andamento — pacotes anteriores ficam só no histórico
     const cicloAtualLoad = p?.ciclo_atual ?? 1
@@ -202,6 +205,11 @@ export default function Paciente() {
     if (!confirm('Apagar esta aplicação do mapa facial?')) return
     await supabase.from('gisele_aplicacoes_faciais').delete().eq('id', aplicacaoId)
     setAplicacoesFaciais(prev => prev.filter(a => a.id !== aplicacaoId))
+  }
+
+  async function addProcedimento(nome: string, cor: string) {
+    const { data, error } = await supabase.from('gisele_procedimentos').insert({ nome, cor }).select('*').single()
+    if (!error && data) setProcedimentos(prev => [...prev, data as Procedimento].sort((a, b) => a.nome.localeCompare(b.nome)))
   }
 
   async function toggleAtivo() {
@@ -477,8 +485,10 @@ export default function Paciente() {
         <MapaFacial
           patientId={patient.id}
           aplicacoes={aplicacoesFaciais}
+          procedimentos={procedimentos}
           onAdd={addAplicacaoFacial}
           onDelete={deleteAplicacaoFacial}
+          onAddProcedimento={addProcedimento}
           canDelete
         />
       </div>

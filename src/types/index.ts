@@ -1,3 +1,11 @@
+export interface Procedimento {
+  id: string
+  nome: string
+  cor: string
+  ativo: boolean
+  created_at: string
+}
+
 export interface GiselePatient {
   id: string
   nome: string
