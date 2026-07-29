@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import type { GiselePatient, GiseleSessao } from '../types'
 import { format } from 'date-fns'
@@ -8,16 +8,25 @@ import ImportCSVModal from '../components/ImportCSVModal'
 
 interface PatientWithSessoes extends GiselePatient {
   sessoes: GiseleSessao[]
+  proximoRetorno: string | null
 }
 
-type FilterTab = 'ativos' | 'inativos' | 'todos'
+function calcProximoRetorno(sessoes: GiseleSessao[], cicloAtual: number): string | null {
+  const doCiclo = sessoes.filter(s => s.ciclo === cicloAtual && s.data_sessao)
+  const ultima = [...doCiclo].sort((a, b) => b.numero_sessao - a.numero_sessao)[0]
+  return ultima?.data_retorno ?? null
+}
+
+type FilterTab = 'retorno' | 'ativos' | 'inativos' | 'todos'
 
 export default function Admin() {
+  const navigate = useNavigate()
   const [patients, setPatients] = useState<PatientWithSessoes[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [tab, setTab] = useState<FilterTab>('ativos')
+  const [tab, setTab] = useState<FilterTab>('retorno')
   const [showImport, setShowImport] = useState(false)
+  const todayStr = new Date().toISOString().slice(0, 10)
 
   async function load() {
     setLoading(true)
@@ -30,7 +39,10 @@ export default function Admin() {
 
     const { data: sessoes } = await supabase.from('gisele_sessoes').select('*')
 
-    setPatients(pts.map((p) => ({ ...p, sessoes: sessoes?.filter((s) => s.patient_id === p.id) ?? [] })))
+    setPatients(pts.map((p) => {
+      const sessoesPaciente = sessoes?.filter((s) => s.patient_id === p.id) ?? []
+      return { ...p, sessoes: sessoesPaciente, proximoRetorno: calcProximoRetorno(sessoesPaciente, p.ciclo_atual ?? 1) }
+    }))
     setLoading(false)
   }
 
@@ -65,10 +77,13 @@ export default function Admin() {
 
   const ativos = patients.filter((p) => p.ativo !== false)
   const inativos = patients.filter((p) => p.ativo === false)
+  const comRetorno = ativos.filter((p) => p.proximoRetorno)
 
-  const byTab = tab === 'ativos' ? ativos : tab === 'inativos' ? inativos : patients
+  const byTab = tab === 'ativos' ? ativos : tab === 'inativos' ? inativos : tab === 'retorno' ? comRetorno : patients
 
-  const filtered = byTab.filter((p) => p.nome.toLowerCase().includes(search.toLowerCase()))
+  const filtered = byTab
+    .filter((p) => p.nome.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' }))
 
   const totalConcluidos = ativos.filter((p) => {
     const total = p.quantidade_sessoes ?? p.sessoes.length
@@ -99,7 +114,7 @@ export default function Admin() {
 
       {/* Abas */}
       <div className="flex gap-1 mb-4 bg-gray-100 p-1 rounded-xl w-fit">
-        {([['ativos', `Ativos (${ativos.length})`], ['inativos', `Inativos (${inativos.length})`], ['todos', 'Todos']] as const).map(([key, label]) => (
+        {([['retorno', `📅 Retorno (${comRetorno.length})`], ['ativos', `Ativos (${ativos.length})`], ['inativos', `Inativos (${inativos.length})`], ['todos', 'Todos']] as const).map(([key, label]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
@@ -188,6 +203,15 @@ export default function Admin() {
                   <div className="flex flex-wrap items-center gap-2 mt-3">
                     <span className="text-xs text-gray-400">{p.pacote_contratado}</span>
                     <span className="text-xs bg-brand/10 text-brand px-1.5 py-0.5 rounded-full font-medium">{feitas}/{p.quantidade_sessoes ?? p.sessoes.length ?? '—'}</span>
+                    {p.proximoRetorno && (
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium border ${
+                        p.proximoRetorno < todayStr ? 'bg-red-50 text-red-600 border-red-200'
+                        : p.proximoRetorno === todayStr ? 'bg-amber-50 text-amber-700 border-amber-200'
+                        : 'bg-blue-50 text-blue-600 border-blue-200'
+                      }`}>
+                        📅 {format(new Date(p.proximoRetorno + 'T12:00:00'), 'dd/MM/yy', { locale: ptBR })}
+                      </span>
+                    )}
                     <span className="text-xs text-gray-300 ml-auto">
                       {format(new Date(p.created_at), 'dd/MM/yy', { locale: ptBR })}
                     </span>
@@ -205,8 +229,8 @@ export default function Admin() {
                   <th className="text-left px-5 py-3 font-semibold text-sm">Cliente</th>
                   <th className="text-left px-5 py-3 font-semibold text-sm">Pacote</th>
                   <th className="text-left px-5 py-3 font-semibold text-sm">Sessões</th>
+                  <th className="text-left px-5 py-3 font-semibold text-sm">Próximo Retorno</th>
                   <th className="text-left px-5 py-3 font-semibold text-sm">Cadastro</th>
-                  <th className="px-5 py-3"/>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -215,7 +239,8 @@ export default function Admin() {
                   return (
                     <tr
                       key={p.id}
-                      className={`transition-colors group ${p.ativo === false ? 'opacity-50' : 'hover:bg-rose-light/40'}`}
+                      onClick={() => navigate(`/paciente/${p.id}`)}
+                      className={`transition-colors group cursor-pointer ${p.ativo === false ? 'opacity-50' : 'hover:bg-rose-light/40'}`}
                     >
                       <td className="px-5 py-3.5 font-medium text-gray-800">
                         <div className="flex items-center gap-2">
@@ -227,16 +252,20 @@ export default function Admin() {
                       <td className="px-5 py-3.5">
                         <span className="text-xs bg-brand/10 text-brand px-2 py-0.5 rounded-full font-medium">{feitas}/{p.sessoes.length || 10}</span>
                       </td>
+                      <td className="px-5 py-3.5">
+                        {p.proximoRetorno ? (
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${
+                            p.proximoRetorno < todayStr ? 'bg-red-50 text-red-600 border-red-200'
+                            : p.proximoRetorno === todayStr ? 'bg-amber-50 text-amber-700 border-amber-200'
+                            : 'bg-blue-50 text-blue-600 border-blue-200'
+                          }`}>
+                            {p.proximoRetorno < todayStr ? '⚠ ' : p.proximoRetorno === todayStr ? '📍 ' : ''}
+                            {format(new Date(p.proximoRetorno + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })}
+                          </span>
+                        ) : <span className="text-gray-300 text-xs">—</span>}
+                      </td>
                       <td className="px-5 py-3.5 text-gray-400 text-xs">
                         {format(new Date(p.created_at), 'dd/MM/yyyy', { locale: ptBR })}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <Link
-                          to={`/paciente/${p.id}`}
-                          className="text-brand font-semibold text-sm hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          Ver →
-                        </Link>
                       </td>
                     </tr>
                   )
